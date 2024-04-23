@@ -3,6 +3,7 @@ const sql = require("mssql");
 const moment = require("moment");
 require("dotenv").config();
 
+
 // Configuració de la connexió a la base de dades MSSQL
 const dbConfig = {
   user: process.env.DB_USER,
@@ -119,9 +120,9 @@ async function initVectorLlicencia(Llicencia, Empresa) {
       for (let dia = 1; dia <= diesDelMes; dia++) {
         let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
         if (sqlSt != "") sqlSt += " union ";
-        sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
+        sqlSt += `select CodiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
           d
-        )}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
+        )}] where client = ${Llicencia} and quantitatservida>0 group by articleCodi
             union
             select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(
               d
@@ -129,15 +130,15 @@ async function initVectorLlicencia(Llicencia, Empresa) {
             union
             select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
     };
-    sqlSt = `use ${Empresa} select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
+    sqlSt = `use ${Empresa} select Article as articleCodi,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
     sqlSt += ` ) t group by Article `;
   //console.log(sqlSt);
     sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
     result = await sql.query(sqlSt);
     result.recordset.forEach(row => {
-      estocPerLlicencia[Llicencia][row.codiArticle] = {
+      estocPerLlicencia[Llicencia][row.articleCodi] = {
         actiu: true,
-        articleCodi: row.codiArticle,
+        articleCodi: row.articleCodi,
         ultimMissatge: "",  
         estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
         tipus: 'Encarrecs',
@@ -160,7 +161,7 @@ async function initVectorLlicencia(Llicencia, Empresa) {
       IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
       BEGIN   
          SELECT 
-         plu as codiArticle,
+         plu as articleCodi,
          objectiu as Objectiu,
          Min*30 as Minut,
          SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
@@ -228,17 +229,17 @@ async function initVectorLlicencia(Llicencia, Empresa) {
       unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
       objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
 
-      if (estocPerLlicencia[Llicencia][row.codiArticle]) {
-        if(estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
+      if (estocPerLlicencia[Llicencia][row.articleCodi]) {
+        if(estocPerLlicencia[Llicencia][row.articleCodi].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.articleCodi].historic;
+        if(estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes + unitatsVenudesNew;
+        if(estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d + unitatsVenudes7dNew;
+        if(estocPerLlicencia[Llicencia][row.articleCodi].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.articleCodi].objectiu + objectiuNew;
       }
 
-      estocPerLlicencia[Llicencia][row.codiArticle] = {
+      estocPerLlicencia[Llicencia][row.articleCodi] = {
         actiu: true,
         tipus: "Compromisos",
-        articleCodi: row.codiArticle,
+        articleCodi: row.articleCodi,
         ultimMissatge: "",
         historic: historicArrayNew.concat({
           Minut: row.Minut,
@@ -358,8 +359,8 @@ async function revisarEstoc(data) {
       let missatge = ""
       data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
         ImportTotalTicket+= parseFloat(article.import);
-        if (estocPerLlicencia[data.Llicencia][article.codiArticle])
-          estocPerLlicencia[data.Llicencia][article.codiArticle].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(articleData.unitatsVenudes)).toFixed(3))
+        if (estocPerLlicencia[data.Llicencia][article.articleCodi])
+          estocPerLlicencia[data.Llicencia][article.articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(articleData.unitatsVenudes)).toFixed(3))
       });
 
       Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
@@ -373,7 +374,7 @@ async function revisarEstoc(data) {
           controlat.ultimaActualitzacio = new Date().toISOString();
           missatge = JSON.stringify({
               Llicencia: data.Llicencia,
-              codiArticle: article.codiArticle,
+              articleCodi: article.articleCodi,
               EstocActualitzat: controlat.estoc,
               FontSize: 12,
               FontColor: "Black",
@@ -402,12 +403,13 @@ async function revisarEstoc(data) {
           else if (dif >= 1) missatge = "";
 
           missatge = JSON.stringify({Llicencia: data.Llicencia,
-            codiArticle: controlat.articleCodi,
+            articleCodi: controlat.articleCodi,
                                      EstocActualitzat: missatge,
                                      FontSize: 20,
                                      FontColor: "Black",
                                    })
         } else if (controlat.tipus === "IndicadorVenut") {
+          controlat.articleCodi = 'IndicadorPos1';
           if(!ImportTotalTicket) ImportTotalTicket=0;
           controlat.importVenut = parseFloat(controlat.importVenut) + parseFloat(ImportTotalTicket); 
           controlat.historic.forEach((historic) => {
@@ -435,9 +437,10 @@ async function revisarEstoc(data) {
           else if (dif > -25)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[10];
           else if (dif > -30)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[11];
           else if (dif > -50)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[12];
+        
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
-            codiArticle: controlat.codiArticle,
+            articleCodi: controlat.articleCodi,
             EstocActualitzat: missatge,
             FontSize: 17,
             FontColor: "Black",
@@ -445,18 +448,9 @@ async function revisarEstoc(data) {
         }
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
-      client.publish(
-        `${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,
-        JSON.stringify({
-          Llicencia: data.Llicencia,
-          codiArticle: controlat.codiArticle,
-          EstocActualitzat: controlat.ultimMissatge,
-          FontSize: 20,
-          FontColor: "Black",
-        })
-      );
+      client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
     }        
-if (process.env.NODE_ENV === "Dsv") console.log(missatge);        
+console.log(missatge);        
       });
     } catch (error) {
       console.error("Error handling stock: ", error);
