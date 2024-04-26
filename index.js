@@ -65,8 +65,8 @@ client.on("message", (topic, message) => {
   let tipus = "Venta";
   if (data.tipus) tipus = data.tipus; 
   switch (tipus) {
-    case "ObraCaixa":
-      ObraCaixa(data);
+    case "ObreCaixa":
+      ObreCaixa(data);
       break;
     case "Venta":
       revisaIndicadors(data);
@@ -268,7 +268,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
         END `;
   //console.log(sqlSt);          
     result2 = await sql.query(sqlSt);
-    result2.recordset.forEach(row => {
+    result2.recordset.forEach(async row => {
         historicArrayNew = [];
         unitatsVenudesNew = parseFloat(row.SumaAvui);
         unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
@@ -486,7 +486,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     }
 }
 // Quan es rep un missatge MQTT
-async function ObraCaixa(data) {
+async function ObreCaixa(data) {
   await initVectorLlicencia(data.Llicencia, data.Empresa, data.CaixaDataInici);
 }
 
