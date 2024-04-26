@@ -54,9 +54,25 @@ client.on("connect", () => {
 
 // Manejador per a missatges rebuts
 client.on("message", (topic, message) => {
-  const data = JSON.parse(message.toString());
-  console.log("message", topic, data);
-  revisarEstoc(data);
+  try {
+    data = JSON.parse(message.toString());
+  } catch (parseError) {
+    console.error("Error al analitzar el missatge com a JSON:", parseError);
+    return; // Si hi ha un error, aturem l'execució aquí i retornem
+  }
+
+  let tipus = "Venta";
+  if (data.tipus) tipus = data.tipus; 
+  switch (tipus) {
+    case "ObraCaixa":
+      ObraCaixa(data);
+      break;
+    case "Venta":
+      revisaIndicadors(data);
+      break;
+    default:
+      console.log("Tipus de missatge desconegut:", tipus);
+  }
 });
 
 // Funcions auxiliars
@@ -89,266 +105,266 @@ function nomTaulaCompromiso(d) {
   return `Compromiso_${year}_${month}`;
 }
 
-async function initVectorLlicencia(Llicencia, Empresa) {
-  //  if (Empresa !='Fac_Camps') return;
-  //  if (new Date(estocPerLlicencia[Llicencia]['LastUpdate']) > new Date().setHours(0, 0, 0, 30) && !estocPerLlicencia[Llicencia]) return;
-  //  if (estocPerLlicencia[Llicencia] && estocPerLlicencia[Llicencia]['LastUpdate']) return;
-  try {
-    const avui = new Date(); // Correcció aquí
-    if (
-      estocPerLlicencia[Llicencia] &&
-      estocPerLlicencia[Llicencia]["LastUpdate"] &&
-      new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() ===
-        avui.toDateString()
-    )
-      return;
+async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
+    const avui = new Date();
+    const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
+    const dataIniciUsada = dataInici ? new Date(dataInici) : dataIniciDefecte;
+    try {
+      if (dataInici == null &&
+        estocPerLlicencia[Llicencia] &&
+        estocPerLlicencia[Llicencia]["LastUpdate"] &&
+        new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
 
-    let sqlSt = "";
-    let LlicenciaA = Llicencia;
-    if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
-    const anyActual = avui.getFullYear();
-    const mesActual = avui.getMonth(); // Mes actual (0-indexat)
-    const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
-    const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-    console.log("Recarreguem !!!!!!!!!!!!!!!!!!!",minutCalcul);
-    estocPerLlicencia[Llicencia] = {};
-    estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
-    estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
+      let sqlSt = "";
+      let LlicenciaA = Llicencia;
+      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
+      const anyActual = avui.getFullYear();
+      const mesActual = avui.getMonth(); // Mes actual (0-indexat)
+      const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
+      const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
+      console.log("Recarreguem !!!!!!!!!!!!!!!!!!! dataIniciUsada : ",dataIniciUsada);
+      estocPerLlicencia[Llicencia] = {};
+      estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
+      estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
 
-    if (Empresa == "Fac_Camps") {
-      for (let dia = 1; dia <= diesDelMes; dia++) {
-        let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
-        if (sqlSt != "") sqlSt += " union ";
-        sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
-          d
-        )}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
-            union
-            select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(
-              d
-            )}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
-            union
-            select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
-    };
-    sqlSt = `use ${Empresa} select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
-    sqlSt += ` ) t group by Article `;
-  //console.log(sqlSt);
-    sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
-    result = await sql.query(sqlSt);
-    result.recordset.forEach(row => {
-      estocPerLlicencia[Llicencia][row.codiArticle] = {
-        actiu: true,
-        articleCodi: row.codiArticle,
-        ultimMissatge: "",  
-        estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
-        tipus: 'Encarrecs',
-        unitatsVenudes: parseFloat(row.UnitatsVenudes),
-        unitatsServides: parseFloat(row.UnitatsServides),
-        unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-        ultimaActualitzacio: new Date().toISOString()
+      if (Empresa == "Fac_Camps") {
+        for (let dia = 1; dia <= diesDelMes; dia++) {
+          let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
+          if (sqlSt != "") sqlSt += " union ";
+          sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
+            d
+          )}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
+              union
+              select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(
+                d
+              )}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
+              union
+              select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
       };
-    });
-  }
+      sqlSt = `use ${Empresa} select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
+      sqlSt += ` ) t group by Article `;
+    //console.log(sqlSt);
+      sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
+      result = await sql.query(sqlSt);
+      result.recordset.forEach(row => {
+        estocPerLlicencia[Llicencia][row.codiArticle] = {
+          actiu: true,
+          articleCodi: row.codiArticle,
+          ultimMissatge: "",  
+          estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
+          tipus: 'Encarrecs',
+          unitatsVenudes: parseFloat(row.UnitatsVenudes),
+          unitatsServides: parseFloat(row.UnitatsServides),
+          unitatsEncarregades: parseFloat(row.unitatsEncarregades),
+          ultimaActualitzacio: new Date().toISOString()
+        };
+      });
+    }
 
-  const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
-  let lastWeekSameDayDia = moment().subtract(7, 'days').date();
-  let historicArrayNew = [];
-  let objectiuNew = 0;
-  let unitatsVenudesNew = 0;
-  let unitatsVenudes7dNew = 0;
+    const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
+    let lastWeekSameDayDia = moment().subtract(7, 'days').date();
+    let historicArrayNew = [];
+    let objectiuNew = 0;
+    let unitatsVenudesNew = 0;
+    let unitatsVenudes7dNew = 0;
 
-  sqlSt=`use ${Empresa} 
-      IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
-      BEGIN   
-         SELECT 
-         plu as codiArticle,
-         objectiu as Objectiu,
-         Min*30 as Minut,
-         SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
-         SUM(CASE WHEN T = 'Past' THEN quantitat ELSE 0 END) AS SumaPast
-         FROM 
-         (
-         -- Subconsulta per les dades "Avui"
-         SELECT 
-             'Avui' AS T,
-             v.plu,
-             objectiu,
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-             SUM(v.quantitat) AS quantitat
-         FROM 
-             (SELECT comentaris AS plu, objectiu 
-             FROM [${nomTaulaCompromiso(avui)}] 
-             WHERE dia = '${moment(avui).format(
-               "YYYY-MM-DD"
-             )}' AND botiga =  ${Llicencia}) o
-         JOIN 
-         [${nomTaulaVenut(
-           avui
-         )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
-         GROUP BY 
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-             objectiu,
-             v.plu
-          UNION ALL
-          -- Subconsulta per les dades "Passat"
-         SELECT 
-             'Past' AS T,
-             v.plu,
-             objectiu,
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-             SUM(v.quantitat) AS quantitat
-         FROM 
-             (SELECT comentaris AS plu, objectiu 
-             FROM [${nomTaulaCompromiso(avui)}] 
-             WHERE dia = '${moment(avui).format(
-               "YYYY-MM-DD"
-             )}' AND botiga =  ${Llicencia}) o
-         JOIN 
-         [${nomTaulaVenut(
-           new Date(lastWeekSameDay)
-         )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
-         GROUP BY 
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-             objectiu,
-             v.plu
-         ) a 
-         GROUP BY 
-         plu,
-         objectiu,
-         Min 
-         ORDER BY 
-         plu,
-         objectiu,
-        Min 
-      END `;
-//console.log(sqlSt);          
-  result2 = await sql.query(sqlSt);
-  result2.recordset.forEach(row => {
-      historicArrayNew = [];
-      unitatsVenudesNew = parseFloat(row.SumaAvui);
-      unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
-      objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
-
-      if (estocPerLlicencia[Llicencia][row.codiArticle]) {
-        if(estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
-        if(estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
-      }
-
-      estocPerLlicencia[Llicencia][row.codiArticle] = {
-        actiu: true,
-        tipus: "Compromisos",
-        articleCodi: row.codiArticle,
-        ultimMissatge: "",
-        historic: historicArrayNew.concat({
-          Minut: row.Minut,
-          SumaAvui: row.SumaAvui,
-          SumaPast: row.SumaPast,
-        }),
-        unitatsVenudes: parseFloat(unitatsVenudesNew),
-        unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
-        objectiu: objectiuNew,
-        minutCalcul: minutCalcul,
-      };
-    });
-
-    sqlSt = `use ${Empresa} 
-         IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
-         BEGIN
-           CREATE TABLE IndicadorsBotiga (
-           ID uniqueidentifier DEFAULT newid() PRIMARY KEY,
-           TmSt datetime DEFAULT getdate(),
-           Botiga nvarchar(255),
-           Tipus nvarchar(255),
-           Actiu nvarchar(255),
-           Param1 nvarchar(255),
-           Param2 nvarchar(255),
-           Param3 nvarchar(255),
-           Param4 nvarchar(255),
-           Param5 nvarchar(255)
-         )
-         END `
-  let tipus = 'IndicadorVenut';       
-  sqlSt=`use ${Empresa} 
-         IF EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')      
-         BEGIN   
-         if (Select count(*) from IndicadorsBotiga Where Botiga = ${Llicencia} and Actiu = '1' and Tipus = '${tipus}') > 0
-         begin
-         select 
-               Min*30 as Minut,
-               SUM(CASE WHEN T = 'Avui' THEN import ELSE 0 END) AS SumaAvui,
-               SUM(CASE WHEN T = 'Past' THEN import ELSE 0 END) AS SumaPast
-               FROM 
-               (
-               -- Subconsulta per les dades "Avui"
-               SELECT 
-                   'Avui' AS T,
-                   (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-                   SUM(v.import) AS import
-               FROM 
-               [${nomTaulaVenut(
-                 avui
-               )}] v where v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
-               GROUP BY 
-                   (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
-                UNION ALL
-                -- Subconsulta per les dades "Passat"
-               SELECT 
-                   'Past' AS T,
-                   (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-                   SUM(v.import) AS import
-               FROM 
-               [${nomTaulaVenut(
-                 new Date(lastWeekSameDay)
-               )}] v where v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia}
-               GROUP BY 
-                   (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
-               ) a 
-               GROUP BY 
-               Min 
-               ORDER BY 
-              Min
-          end    
-         END`;
-//console.log(sqlSt);          
+    sqlSt=`use ${Empresa} 
+        IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
+        BEGIN   
+          SELECT 
+          plu as codiArticle,
+          objectiu as Objectiu,
+          Min*30 as Minut,
+          SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
+          SUM(CASE WHEN T = 'Past' THEN quantitat ELSE 0 END) AS SumaPast
+          FROM 
+          (
+          -- Subconsulta per les dades "Avui"
+          SELECT 
+              'Avui' AS T,
+              v.plu,
+              objectiu,
+              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
+              SUM(v.quantitat) AS quantitat
+          FROM 
+              (SELECT comentaris AS plu, objectiu 
+              FROM [${nomTaulaCompromiso(avui)}] 
+              WHERE dia = '${moment(avui).format(
+                "YYYY-MM-DD"
+              )}' AND botiga =  ${Llicencia}) o
+          JOIN 
+          [${nomTaulaVenut(
+            avui
+          )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
+          GROUP BY 
+              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
+              objectiu,
+              v.plu
+            UNION ALL
+            -- Subconsulta per les dades "Passat"
+          SELECT 
+              'Past' AS T,
+              v.plu,
+              objectiu,
+              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
+              SUM(v.quantitat) AS quantitat
+          FROM 
+              (SELECT comentaris AS plu, objectiu 
+              FROM [${nomTaulaCompromiso(avui)}] 
+              WHERE dia = '${moment(avui).format(
+                "YYYY-MM-DD"
+              )}' AND botiga =  ${Llicencia}) o
+          JOIN 
+          [${nomTaulaVenut(
+            new Date(lastWeekSameDay)
+          )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
+          GROUP BY 
+              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
+              objectiu,
+              v.plu
+          ) a 
+          GROUP BY 
+          plu,
+          objectiu,
+          Min 
+          ORDER BY 
+          plu,
+          objectiu,
+          Min 
+        END `;
+  //console.log(sqlSt);          
     result2 = await sql.query(sqlSt);
-    if (result2 && result2.recordset) {
-      result2.recordset.forEach((row) => {
+    result2.recordset.forEach(row => {
         historicArrayNew = [];
-        importVenutNew = parseFloat(row.SumaAvui);
-        importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+        unitatsVenudesNew = parseFloat(row.SumaAvui);
+        unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+        objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
 
-        if (estocPerLlicencia[Llicencia][tipus]) {
-          historicArrayNew    = estocPerLlicencia[Llicencia][tipus].historic;
-          importVenutNew = estocPerLlicencia[Llicencia][tipus].importVenut + parseFloat(importVenutNew);
-          importVenut7dNew    = estocPerLlicencia[Llicencia][tipus].importVenut7d + parseFloat(importVenut7dNew);
+        if (estocPerLlicencia[Llicencia][row.codiArticle]) {
+          if(estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
+          if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
+          if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
+          if(estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
         }
 
-        estocPerLlicencia[Llicencia][tipus] = {
+        estocPerLlicencia[Llicencia][row.codiArticle] = {
           actiu: true,
-          tipus: tipus,
-          articleCodi: tipus,
+          tipus: "Compromisos",
+          articleCodi: row.codiArticle,
           ultimMissatge: "",
           historic: historicArrayNew.concat({
             Minut: row.Minut,
             SumaAvui: row.SumaAvui,
             SumaPast: row.SumaPast,
           }),
-          importVenut: parseFloat(importVenutNew),
-          importVenut7d: parseFloat(importVenut7dNew),
+          unitatsVenudes: parseFloat(unitatsVenudesNew),
+          unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
+          objectiu: objectiuNew,
           minutCalcul: minutCalcul,
         };
       });
+
+      sqlSt = `use ${Empresa} 
+          IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
+          BEGIN
+            CREATE TABLE IndicadorsBotiga (
+            ID uniqueidentifier DEFAULT newid() PRIMARY KEY,
+            TmSt datetime DEFAULT getdate(),
+            Botiga nvarchar(255),
+            Tipus nvarchar(255),
+            Actiu nvarchar(255),
+            Param1 nvarchar(255),
+            Param2 nvarchar(255),
+            Param3 nvarchar(255),
+            Param4 nvarchar(255),
+            Param5 nvarchar(255)
+          )
+          END `
+    let tipus = 'IndicadorVenut';       
+    sqlSt=`use ${Empresa} 
+          IF EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')      
+          BEGIN   
+          if (Select count(*) from IndicadorsBotiga Where Botiga = ${Llicencia} and Actiu = '1' and Tipus = '${tipus}') > 0
+          begin
+          select 
+                Min*30 as Minut,
+                SUM(CASE WHEN T = 'Avui' THEN import ELSE 0 END) AS SumaAvui,
+                SUM(CASE WHEN T = 'Past' THEN import ELSE 0 END) AS SumaPast
+                FROM 
+                (
+                -- Subconsulta per les dades "Avui"
+                SELECT 
+                    'Avui' AS T,
+                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
+                    SUM(v.import) AS import
+                FROM 
+                [${nomTaulaVenut(
+                  avui
+                )}] v where v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
+                GROUP BY 
+                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
+                  UNION ALL
+                  -- Subconsulta per les dades "Passat"
+                SELECT 
+                    'Past' AS T,
+                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
+                    SUM(v.import) AS import
+                FROM 
+                [${nomTaulaVenut(
+                  new Date(lastWeekSameDay)
+                )}] v where v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia}
+                GROUP BY 
+                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
+                ) a 
+                GROUP BY 
+                Min 
+                ORDER BY 
+                Min
+            end    
+          END`;
+  //console.log(sqlSt);          
+      result2 = await sql.query(sqlSt);
+      if (result2 && result2.recordset) {
+        result2.recordset.forEach((row) => {
+          historicArrayNew = [];
+          importVenutNew = parseFloat(row.SumaAvui);
+          importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+
+          if (estocPerLlicencia[Llicencia][tipus]) {
+            historicArrayNew    = estocPerLlicencia[Llicencia][tipus].historic;
+            importVenutNew = estocPerLlicencia[Llicencia][tipus].importVenut + parseFloat(importVenutNew);
+            importVenut7dNew    = estocPerLlicencia[Llicencia][tipus].importVenut7d + parseFloat(importVenut7dNew);
+          }
+
+          estocPerLlicencia[Llicencia][tipus] = {
+            actiu: true,
+            tipus: tipus,
+            articleCodi: tipus,
+            ultimMissatge: "",
+            historic: historicArrayNew.concat({
+              Minut: row.Minut,
+              SumaAvui: row.SumaAvui,
+              SumaPast: row.SumaPast,
+            }),
+            importVenut: parseFloat(importVenutNew),
+            importVenut7d: parseFloat(importVenut7dNew),
+            minutCalcul: minutCalcul,
+          };
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      // Gestiona l'error o llança'l de nou si és necessari.
+      throw error; // Llançar l'error farà que la promesa sigui rebutjada.
     }
-  } catch (error) {
-    console.error(error);
-    // Gestiona l'error o llança'l de nou si és necessari.
-    throw error; // Llançar l'error farà que la promesa sigui rebutjada.
-  }
+}
+// Quan es rep un missatge MQTT
+async function ObraCaixa(data) {
+  await initVectorLlicencia(data.Llicencia, data.Empresa, data.CaixaDataInici);
 }
 
 // Quan es rep un missatge MQTT
-async function revisarEstoc(data) {
+async function revisaIndicadors(data) {
   // Comprovar si 'data' té la propietat 'Articles' i que és una array
   let ImportTotalTicket = 0;
   if (data && data.Articles && Array.isArray(data.Articles)) {
@@ -419,8 +435,8 @@ async function revisarEstoc(data) {
           });
 
           if (process.env.NODE_ENV === "Dsv") console.log('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
-          let dif = Math.floor(controlat.importVenut/controlat.importVenut7d * 100 )  -100 ;
-          let carasInc = ["🤑","😃","😄","😒","😥","😳","😟","💩","😠","😡","🤬","🤢"];
+          let dif = Math.floor(controlat.importVenut/controlat.importVenut7d * 100 )  -100 ;  // Calculem la diferència en percentatge
+          let carasInc = ["🤑","😃","😄","😒","😥","😳","😟","💩","😠","😡","🤬","🤢","🤢"];
           missatge = Math.round(controlat.importVenut) + ' ' + carasInc[5];
           if      (dif >20  )  missatge = Math.round(controlat.importVenut) + ' ' + carasInc[0];
           else if (dif >10  )  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[1];
@@ -434,7 +450,6 @@ async function revisarEstoc(data) {
           else if (dif > -24)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[9];
           else if (dif > -25)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[10];
           else if (dif > -30)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[11];
-          else if (dif > -50)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[12];
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
             codiArticle: controlat.codiArticle,
