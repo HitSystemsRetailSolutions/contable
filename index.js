@@ -482,12 +482,32 @@ async function revisaIndicadors(data) {
             parseFloat(controlat.unitatsVenudes) -
             parseFloat(controlat.unitatsEncarregades);
           controlat.ultimaActualitzacio = new Date().toISOString();
+          missatge = controlat.estoc + ' = ' +  parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
+          size = 12
+          color = "Black"
+          if (controlat.estoc <  0){
+            color = "Red"
+            size = 17
+            missatge = '🤢' + missatge
+          }
+          if (controlat.estoc == 0) {
+            missatge = '🎯' + missatge
+            color = "Green"
+          }
+          if (controlat.estoc == 1) missatge = '🍒' + missatge
+          if (controlat.estoc == 2) missatge = '🍒🍒' + missatge
+          if (controlat.estoc == 3) missatge = '🍒🍒🍒' + missatge
+          if (controlat.estoc == 4) missatge = '🍒🍒🍒🍒' + missatge
+          if (controlat.estoc == 5) missatge = '🍒🍒🍒🍒🍒' + missatge
+          if (controlat.estoc < 0) 
+          if (controlat.estoc == 0) 
+
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
             articleCodi: controlat.articleCodi,
-            EstocActualitzat: controlat.estoc,
-            FontSize: 12,
-            FontColor: "Black",
+            EstocActualitzat: missatge,
+            FontSize: size,
+            FontColor: color,
           })
         } else if (controlat.tipus === "Compromisos") {
           controlat.historic.forEach((historic) => {
