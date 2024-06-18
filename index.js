@@ -127,74 +127,34 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       estocPerLlicencia[Llicencia] = {};
       estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
       estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
-
       if (Empresa == "Fac_Camps") {
         for (let dia = 1; dia <= diesDelMes; dia++) {
           let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
           if (sqlSt != "") sqlSt += " union ";
-          sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
-            d
-          )}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
-              union
-              select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(
-                d
-              )}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
-              union
-              select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
+          sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(d)}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
+              union select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(d)}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
+              union select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
       };
       sqlSt = `use ${Empresa} select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
       sqlSt += ` ) t group by Article `;
-    //console.log(sqlSt);
+//console.log(sqlSt);
       sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
       result = await sql.query(sqlSt);
       result.recordset.forEach(row => {
-        estocPerLlicencia[Llicencia][row.codiArticle] = {
-          actiu: true,
-          articleCodi: row.codiArticle,
-          ultimMissatge: "",  
-          estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
-          tipus: 'Encarrecs',
-          unitatsVenudes: parseFloat(row.UnitatsVenudes),
-          unitatsServides: parseFloat(row.UnitatsServides),
-          unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-          ultimaActualitzacio: new Date().toISOString()
-        };
+        if(row.unitatsEncarregades>0)        
+          estocPerLlicencia[Llicencia][row.codiArticle] = {
+            actiu: true,
+            articleCodi: row.codiArticle,
+            ultimMissatge: "",  
+            estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
+            tipus: 'Encarrecs',
+            unitatsVenudes: parseFloat(row.UnitatsVenudes),
+            unitatsServides: parseFloat(row.UnitatsServides),
+            unitatsEncarregades: parseFloat(row.unitatsEncarregades),
+            ultimaActualitzacio: new Date().toISOString()
+          };
       });
     }
-    if (Empresa == "Fac_Camps") {
-      for (let dia = 1; dia <= diesDelMes; dia++) {
-        let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
-        if (sqlSt != "") sqlSt += " union ";
-        sqlSt += `select CodiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(
-          d
-        )}] where client = ${Llicencia} and quantitatservida>0 group by articleCodi
-            union
-            select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(
-              d
-            )}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
-            union
-            select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
-    };
-    sqlSt = `use ${Empresa} select Article as articleCodi,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
-    sqlSt += ` ) t group by Article `;
-  //console.log(sqlSt);
-    sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
-    result = await sql.query(sqlSt);
-    result.recordset.forEach(row => {
-      estocPerLlicencia[Llicencia][row.articleCodi] = {
-        actiu: true,
-        articleCodi: row.articleCodi,
-        ultimMissatge: "",  
-        estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
-        tipus: 'Encarrecs',
-        unitatsVenudes: parseFloat(row.UnitatsVenudes),
-        unitatsServides: parseFloat(row.UnitatsServides),
-        unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-        ultimaActualitzacio: new Date().toISOString()
-      };
-    });
-  }
-
     const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
     let lastWeekSameDayDia = moment().subtract(7, 'days').date();
     let historicArrayNew = [];
@@ -266,8 +226,9 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
           objectiu,
           Min 
         END `;
-  //console.log(sqlSt);          
+//console.log(sqlSt);          
     result2 = await sql.query(sqlSt);
+    if (result2.recordset && result2.recordset.length > 0) 
     result2.recordset.forEach(async row => {
         historicArrayNew = [];
         unitatsVenudesNew = parseFloat(row.SumaAvui);
@@ -493,6 +454,7 @@ async function ObreCaixa(data) {
 // Quan es rep un missatge MQTT
 async function revisaIndicadors(data) {
   // Comprovar si 'data' té la propietat 'Articles' i que és una array
+//console.log(data)  
   let ImportTotalTicket = 0;
   if (data && data.Articles && Array.isArray(data.Articles)) {
     try {
@@ -501,26 +463,30 @@ async function revisaIndicadors(data) {
       let missatge = ""
       data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
         ImportTotalTicket+= parseFloat(article.import);
-        if (estocPerLlicencia[data.Llicencia][article.articleCodi])
-          estocPerLlicencia[data.Llicencia][article.articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(articleData.unitatsVenudes)).toFixed(3))
+        let articleCodi=0
+        if(article.articleCodi) articleCodi = article.articleCodi
+        if(article.CodiArticle) articleCodi = article.CodiArticle
+        if (estocPerLlicencia[data.Llicencia][articleCodi]) {                  
+          estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
+        }
       });
 
       Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
         if (process.env.NODE_ENV === "Dsv") console.log(controlat);
         missatge = controlat.ultimMissatge; // Creem el missatge
         if (controlat.tipus === "Encarrecs") {
-          articleData.estoc =
+          controlat.estoc =
             parseFloat(controlat.unitatsServides) -
             parseFloat(controlat.unitatsVenudes) -
             parseFloat(controlat.unitatsEncarregades);
           controlat.ultimaActualitzacio = new Date().toISOString();
           missatge = JSON.stringify({
-              Llicencia: data.Llicencia,
-              articleCodi: article.articleCodi,
-              EstocActualitzat: controlat.estoc,
-              FontSize: 12,
-              FontColor: "Black",
-            })
+            Llicencia: data.Llicencia,
+            articleCodi: controlat.articleCodi,
+            EstocActualitzat: controlat.estoc,
+            FontSize: 12,
+            FontColor: "Black",
+          })
         } else if (controlat.tipus === "Compromisos") {
           controlat.historic.forEach((historic) => {
             if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
@@ -591,8 +557,9 @@ async function revisaIndicadors(data) {
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
+//console.log(missatge);              
     }        
-console.log(missatge);        
+
       });
     } catch (error) {
       console.error("Error handling stock: ", error);
