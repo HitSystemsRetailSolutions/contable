@@ -66,9 +66,11 @@ client.on("message", (topic, message) => {
   if (data.tipus) tipus = data.tipus; 
   switch (tipus) {
     case "ObreCaixa":
+      process.stdout.write('🏷️')  
       ObreCaixa(data);
       break;
     case "Venta":
+      process.stdout.write('🛒')  
       revisaIndicadors(data);
       break;
     default:
@@ -123,7 +125,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       const mesActual = avui.getMonth(); // Mes actual (0-indexat)
       const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
       const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-      console.log("Recarreguem !!!!!!!!!!!!!!!!!!! dataIniciUsada : ",dataIniciUsada);
+      process.stdout.write('🔄')  
       estocPerLlicencia[Llicencia] = {};
       estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
       estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
@@ -557,7 +559,7 @@ async function revisaIndicadors(data) {
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
-//console.log(missatge);              
+      process.stdout.write('📨')            
     }        
 
       });
