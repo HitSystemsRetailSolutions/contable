@@ -73,7 +73,7 @@ client.on("message", (topic, message) => {
         process.stdout.write('🛒')  
         revisaIndicadors(data);
         break;
-    case "Encarreg":
+    case "Encarrec":
       process.stdout.write('⏰')  
       revisaIndicadors(data);
       break;
