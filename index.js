@@ -145,7 +145,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                     select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
                     union select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
                     ` + sqlSt
-      sqlSt += ` ) t group by Article `;
+      sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
 //console.log(sqlSt);
       sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
       result = await sql.query(sqlSt);
