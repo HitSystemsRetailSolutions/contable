@@ -146,7 +146,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                     union select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
                     ` + sqlSt
       sqlSt += ` ) t group by Article `;
-console.log(sqlSt);
+//console.log(sqlSt);
       sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
       result = await sql.query(sqlSt);
       result.recordset.forEach(row => {
