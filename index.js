@@ -34,7 +34,7 @@ const mqttOptions = {
 // Dades emmagatzemades en memòria
 let estocPerLlicencia = {};
 
-// MQTT
+//********************************************************************************/ MQTT
 // Connexió al servidor MQTT
 const client = mqtt.connect(mqttOptions);
 
@@ -70,7 +70,11 @@ client.on("message", (topic, message) => {
       ObreCaixa(data);
       break;
     case "Venta":
-      process.stdout.write('🛒')  
+        process.stdout.write('🛒')  
+        revisaIndicadors(data);
+        break;
+    case "Encarreg":
+      process.stdout.write('⏰')  
       revisaIndicadors(data);
       break;
     default:
@@ -78,7 +82,7 @@ client.on("message", (topic, message) => {
   }
 });
 
-// Funcions auxiliars
+//******************************************************************************************************************* */ Funcions auxiliars
 function nomTaulaServit(d) {
   // [Servit-24-02-10]
   const year = d.getFullYear().toString().slice(-2);
@@ -463,13 +467,20 @@ async function revisaIndicadors(data) {
       await initVectorLlicencia(data.Llicencia, data.Empresa);
       const minutCalcul = new Date().getHours() * 60 + Math.floor(new Date().getMinutes()); // Calcula el minut actual (0-47)
       let missatge = ""
+      let tipus = "Venta";
+      if (data.tipus) tipus = data.tipus; 
       data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
-        ImportTotalTicket+= parseFloat(article.import);
         let articleCodi=0
         if(article.articleCodi) articleCodi = article.articleCodi
         if(article.CodiArticle) articleCodi = article.CodiArticle
-        if (estocPerLlicencia[data.Llicencia][articleCodi]) {                  
-          estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
+        switch (tipus) {
+          case "Venta":
+            ImportTotalTicket+= parseFloat(article.import);
+            if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
+          break;
+          case "Encarreg":
+            if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades)).toFixed(3))
+          break;
         }
       });
 
