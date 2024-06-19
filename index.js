@@ -73,7 +73,7 @@ client.on("message", (topic, message) => {
         process.stdout.write('🛒')  
         revisaIndicadors(data);
         break;
-    case "Encarreg","Encarrec":
+    case "Encarrec","Encarrec":
       process.stdout.write('⏰')  
       revisaIndicadors(data);
       break;
@@ -138,14 +138,15 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       if (Empresa == "Fac_Camps") {
         for (let dia = 1; dia <= diesDelMes; dia++) {
           let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
-          if (sqlSt != "") sqlSt += " union ";
-          sqlSt += `select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(d)}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle
-              union select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(d)}]  where botiga = ${Llicencia} and day(data) = ${dia}  group by plu
-              union select Article as Article ,0 as s , 0 aS V , quantitat AS e  from  [${nomTaulaEncarregs(d)}] where botiga = ${Llicencia} and day(data) = ${dia} and estat = 0 `
-      };
-      sqlSt = `use ${Empresa} select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( ` + sqlSt;
+          sqlSt += ` union select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(d)}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle `
+        };
+        sqlSt = `use ${Empresa} 
+                 select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( 
+                    select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
+                    union select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
+                    ` + sqlSt
       sqlSt += ` ) t group by Article `;
-//console.log(sqlSt);
+console.log(sqlSt);
       sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
       result = await sql.query(sqlSt);
       result.recordset.forEach(row => {
