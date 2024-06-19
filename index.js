@@ -73,7 +73,7 @@ client.on("message", (topic, message) => {
         process.stdout.write('🛒')  
         revisaIndicadors(data);
         break;
-    case "Encarreg":
+    case "Encarreg","Encarrec":
       process.stdout.write('⏰')  
       revisaIndicadors(data);
       break;
@@ -117,9 +117,11 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
     const dataIniciUsada = dataInici ? new Date(dataInici) : dataIniciDefecte;
     try {
-      if (dataInici == null &&
+      if (
+        dataInici == null &&
         estocPerLlicencia[Llicencia] &&
         estocPerLlicencia[Llicencia]["LastUpdate"] &&
+        Empresa != "Fac_Camps" &&
         new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
 
       let sqlSt = "";
@@ -129,7 +131,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       const mesActual = avui.getMonth(); // Mes actual (0-indexat)
       const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
       const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-      process.stdout.write('🔄')  
+      console.log('🔄')  
       estocPerLlicencia[Llicencia] = {};
       estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
       estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
@@ -493,33 +495,32 @@ async function revisaIndicadors(data) {
             parseFloat(controlat.unitatsVenudes) -
             parseFloat(controlat.unitatsEncarregades);
           controlat.ultimaActualitzacio = new Date().toISOString();
-          missatge = controlat.estoc + ' = ' +  parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
+          let texte = controlat.estoc + ' = ' +  parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
           size = 12
           color = "Black"
           if (controlat.estoc <  0){
             color = "Red"
             size = 17
-            missatge = '🤢' + missatge
+            texte = '🤢' + texte
           }
           if (controlat.estoc == 0) {
-            missatge = '🎯' + missatge
+            texte = '🎯' + texte
             color = "Green"
           }
-          if (controlat.estoc == 1) missatge = '🍒' + missatge
-          if (controlat.estoc == 2) missatge = '🍒🍒' + missatge
-          if (controlat.estoc == 3) missatge = '🍒🍒🍒' + missatge
-          if (controlat.estoc == 4) missatge = '🍒🍒🍒🍒' + missatge
-          if (controlat.estoc == 5) missatge = '🍒🍒🍒🍒🍒' + missatge
-          if (controlat.estoc < 0) 
-          if (controlat.estoc == 0) 
+          if (controlat.estoc == 1) texte = '🍒' + texte
+          if (controlat.estoc == 2) texte = '🍒🍒' + texte
+          if (controlat.estoc == 3) texte = '🍒🍒🍒' + texte
+          if (controlat.estoc == 4) texte = '🍒🍒🍒🍒' + texte
+          if (controlat.estoc == 5) texte = '🍒🍒🍒🍒🍒' + texte
 
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
             articleCodi: controlat.articleCodi,
-            EstocActualitzat: missatge,
+            EstocActualitzat: texte,
             FontSize: size,
             FontColor: color,
           })
+//console.log(missatge)          
         } else if (controlat.tipus === "Compromisos") {
           controlat.historic.forEach((historic) => {
             if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
@@ -590,6 +591,7 @@ async function revisaIndicadors(data) {
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
+//      console.log(controlat.ultimMissatge)
       process.stdout.write('📨')            
     }        
 
