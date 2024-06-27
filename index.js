@@ -1,8 +1,9 @@
-const mqtt = require("mqtt");
-const sql = require("mssql");
-const moment = require("moment");
-require("dotenv").config();
-
+import { test, describe, it, beforeEach, afterEach } from 'node:test';
+import { strict as assert } from 'node:assert';
+import mqtt from "mqtt";
+import sql from "mssql";
+import moment from "moment";
+import 'dotenv/config';
 
 // Configuració de la connexió a la base de dades MSSQL
 const dbConfig = {
@@ -21,7 +22,6 @@ const dbConfig = {
   },
   requestTimeout: 10000,
 };
-sql.connect(dbConfig);
 
 // Configuració del client MQTT
 const mqttOptions = {
@@ -54,14 +54,14 @@ client.on("connect", () => {
 });
 
 // Manejador per a missatges rebuts
-client.on("message", (topic, message) => {
+client.on("message", (topic, missatge) => {
+  let data
   try {
-    data = JSON.parse(message.toString());
+    data=JSON.parse(missatge);
   } catch (parseError) {
     console.error("Error al analitzar el missatge com a JSON:", parseError);
     return; // Si hi ha un error, aturem l'execució aquí i retornem
   }
-
   let tipus = "Venta";
   if (data.tipus) tipus = data.tipus; 
   switch (tipus) {
@@ -121,20 +121,21 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
         dataInici == null &&
         estocPerLlicencia[Llicencia] &&
         estocPerLlicencia[Llicencia]["LastUpdate"] &&
-        Empresa != "Fac_Camps" &&
         new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
-
+        console.log('🔄')  
+        // si sql no esta conectat la conectem i esperem a que estigui conectat
+      if (!sql.connected) await sql.connect(dbConfig);
       let sqlSt = "";
       let LlicenciaA = Llicencia;
-      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
+//      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
       const anyActual = avui.getFullYear();
       const mesActual = avui.getMonth(); // Mes actual (0-indexat)
       const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
       const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-      console.log('🔄')  
       estocPerLlicencia[Llicencia] = {};
       estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
       estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
+
       if (Empresa == "Fac_Camps") {
         for (let dia = 1; dia <= diesDelMes; dia++) {
           let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
@@ -147,8 +148,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                     ` + sqlSt
       sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
 //console.log(sqlSt);
-      sql.connect(dbConfig); // Assegura't que això es tracta com una promesa.
-      result = await sql.query(sqlSt);
+      let result = await sql.query(sqlSt);
       result.recordset.forEach(row => {
         if(row.unitatsEncarregades>0)        
           estocPerLlicencia[Llicencia][row.codiArticle] = {
@@ -236,7 +236,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
           Min 
         END `;
 //console.log(sqlSt);          
-    result2 = await sql.query(sqlSt);
+    let result2 = await sql.query(sqlSt);
     if (result2.recordset && result2.recordset.length > 0) 
     result2.recordset.forEach(async row => {
         historicArrayNew = [];
@@ -424,8 +424,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       if (result2 && result2.recordset) {
         result2.recordset.forEach((row) => {
           historicArrayNew = [];
-          importVenutNew = parseFloat(row.SumaAvui);
-          importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+          let importVenutNew = parseFloat(row.SumaAvui);
+          let importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
 
           if (estocPerLlicencia[Llicencia][tipus]) {
             historicArrayNew    = estocPerLlicencia[Llicencia][tipus].historic;
@@ -459,17 +459,16 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
 async function ObreCaixa(data) {
   await initVectorLlicencia(data.Llicencia, data.Empresa, data.CaixaDataInici);
 }
-
+/********************************************** */
 // Quan es rep un missatge MQTT
 async function revisaIndicadors(data) {
-  // Comprovar si 'data' té la propietat 'Articles' i que és una array
-//console.log(data)  
+// Comprovar si 'data' té la propietat 'Articles' i que és una array
+  let missatge = ""
   let ImportTotalTicket = 0;
   if (data && data.Articles && Array.isArray(data.Articles)) {
     try {
       await initVectorLlicencia(data.Llicencia, data.Empresa);
       const minutCalcul = new Date().getHours() * 60 + Math.floor(new Date().getMinutes()); // Calcula el minut actual (0-47)
-      let missatge = ""
       let tipus = "Venta";
       if (data.tipus) tipus = data.tipus; 
       data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
@@ -490,15 +489,15 @@ async function revisaIndicadors(data) {
       Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
         if (process.env.NODE_ENV === "Dsv") console.log(controlat);
         missatge = controlat.ultimMissatge; // Creem el missatge
-        if (controlat.tipus === "Encarrecs") {
+        if (controlat.tipus === "Encarrecs") {    // Si hi ha encarregs 
           controlat.estoc =
             parseFloat(controlat.unitatsServides) -
             parseFloat(controlat.unitatsVenudes) -
             parseFloat(controlat.unitatsEncarregades);
           controlat.ultimaActualitzacio = new Date().toISOString();
           let texte = controlat.estoc + ' = ' +  parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
-          size = 12
-          color = "Black"
+          let size = 12
+          let color = "Black"
           if (controlat.estoc <  0){
             color = "Red"
             size = 17
@@ -580,7 +579,6 @@ async function revisaIndicadors(data) {
           else if (dif > -25)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[10];
           else if (dif > -30)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[11];
           else if (dif > -50)  missatge= Math.round(controlat.importVenut) + ' ' + carasInc[12];
-        
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
             articleCodi: controlat.articleCodi,
@@ -592,10 +590,9 @@ async function revisaIndicadors(data) {
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
-//      console.log(controlat.ultimMissatge)
+      //console.log(controlat.ultimMissatge)
       process.stdout.write('📨')            
     }        
-
       });
     } catch (error) {
       console.error("Error handling stock: ", error);
@@ -603,5 +600,64 @@ async function revisaIndicadors(data) {
   }
 }
 
-// Mantenir el programa en execució
-process.stdin.resume();
+
+// Test code
+if (process.argv.includes('--test')) {
+  test.describe('revisaIndicadors', () => {
+  //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
+    const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
+    let clientMqttTest  
+
+    test.before(async () => {
+      await new Promise((resolve, reject) => {
+        clientMqttTest = mqtt.connect({
+          host: process.env.MQTT_HOST,
+          port: process.env.MQTT_PORT,
+          username: process.env.MQTT_USER,
+          password: process.env.MQTT_PASSWORD,
+          clientId: 'TestControl',
+        });
+        clientMqttTest.on('connect', () => {
+          clientMqttTest.subscribe(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`, (err) => {
+            if (!err) {
+              resolve();
+            } else {
+              reject(err);
+            }
+          });
+        });
+      });
+    });
+
+    test('Mirem si avisa per indicadors de venda', async () => {
+      await revisaIndicadors(data);
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`No He rebut ${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}  10 segons`));
+          resolve();
+        }, 10000);
+        clientMqttTest.on('message', (topic, message) => {
+          if (topic === `${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`) {
+            clearTimeout(timeout);
+            const missatge = JSON.parse(message.toString());
+            assert.strictEqual(missatge.Llicencia, data.Llicencia);
+            clientMqttTest.unsubscribe(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`);
+            resolve();
+          }
+        });
+      });
+    });
+
+    test.after((done) => {
+      clientMqttTest.end(false, () => {
+        test.publish()
+        process.exitCode = 0;
+        done();
+      });
+    });
+
+  });
+}else{// Mantenir el programa en execució
+  process.stdin.resume();
+}
+
