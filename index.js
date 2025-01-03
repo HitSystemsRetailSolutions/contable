@@ -40,9 +40,6 @@ let estocPerLlicencia = {};
 // Connexió al servidor MQTT
 const client = mqtt.connect(mqttOptions);
 // si estem en debug, informem del url user i psw al que ens entem conectant per console.log
-logamqtt("Connectant al servidor MQTT:", process.env.MQTT_HOST);
-logamqtt("Amb l'usuari:", process.env.MQTT_USER);
-logamqtt("I la contrasenya:", process.env.MQTT_PASSWORD);
 
 client.on("connect", () => {
   console.log("Connectat al servidor MQTT", process.env.MQTT_HOST);
@@ -140,30 +137,61 @@ function nomTaulaCompromiso(d) {
 
 function logamqtt(sqlSt) {
   if (!MqttLog) return;
-
-  try {
-    // Mostra el SQL al terminal
-    console.log("📜 SQL Statement:");
-    console.log(sqlSt);
-
-    // Envia el SQL al servidor MQTT
-    if (client.connected) {
-      const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
-      client.publish(topic, sqlSt, (err) => {
-        if (err) {
-          console.error("❌ Error enviant el SQL per MQTT:", err);
-        } else {
-          console.log("📤 SQL enviat al topic:", topic);
+    try {
+      // Mostra el SQL original al terminal
+      console.log("📜 SQL Statement original:");
+      console.log(sqlSt);
+  
+      // Assegurar que el missatge sigui un string
+      let sqlMessage = typeof sqlSt === "string" ? sqlSt : JSON.stringify(sqlSt);
+  
+      // Màxim de caràcters per missatge
+      const maxLength = 1024;
+  
+      if (sqlMessage.length > maxLength) {
+        console.warn(`⚠️ El missatge SQL és massa llarg (${sqlMessage.length} caràcters). Es dividirà en parts.`);
+  
+        // Divideix el missatge en parts
+        const parts = [];
+        for (let i = 0; i < sqlMessage.length; i += maxLength) {
+          parts.push(sqlMessage.slice(i, i + maxLength));
         }
-      });
-    } else {
-      console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
+  
+        // Envia cada part amb un índex
+        parts.forEach((part, index) => {
+          const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql/part${index + 1}`;
+          if (client.connected) {
+            client.publish(topic, part, (err) => {
+              if (err) {
+                console.error(`❌ Error enviant la part ${index + 1} del SQL per MQTT:`, err);
+              } else {
+                console.log(`📤 SQL part ${index + 1} enviat al topic: ${topic}`);
+              }
+            });
+          } else {
+            console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
+          }
+        });
+      } else {
+        // Si no és massa llarg, envia el missatge complet
+        const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
+        if (client.connected) {
+          client.publish(topic, sqlMessage, (err) => {
+            if (err) {
+              console.error("❌ Error enviant el SQL per MQTT:", err);
+            } else {
+              console.log("📤 SQL enviat al topic:", topic);
+            }
+          });
+        } else {
+          console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error en logamqtt:", error);
     }
-  } catch (error) {
-    console.error("❌ Error en logamqtt:", error);
   }
-}
-
+  
 
 async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     const avui = new Date();
@@ -210,7 +238,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                       ` + sqlSt
         sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
   //console.log(sqlSt);
-         logamqtt(sqlSt)
+        logamqtt(sqlSt)
         let result = await sql.query(sqlSt);
         result.recordset.forEach(row => {
           if(row.unitatsEncarregades>0)        
@@ -553,7 +581,6 @@ async function revisaIndicadors(data) {
       });
 
       Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
-        logamqtt(controlat);
         missatge = controlat.ultimMissatge; // Creem el missatge
         if (controlat.tipus === "Encarrecs") {    // Si hi ha encarregs 
           controlat.estoc =
@@ -628,7 +655,7 @@ async function revisaIndicadors(data) {
             }
           });
 
-          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
+//          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
           let dif = Math.floor(controlat.importVenut/controlat.importVenut7d * 100 )  -100 ;  // Calculem la diferència en percentatge
           let carasInc = ["🤑","😃","😄","😒","😥","😳","😟","💩","😠","😡","🤬","🤢","🤢"];
 
