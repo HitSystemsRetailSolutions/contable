@@ -700,7 +700,6 @@ async function revisaIndicadors(data) {
             FontColor: color,
           })
         }
-    process.stdout.write('.') 
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
@@ -712,6 +711,7 @@ async function revisaIndicadors(data) {
       console.error("Error handling stock: ", error);
     }
   }
+  process.stdout.write('.') 
 }
 
 
