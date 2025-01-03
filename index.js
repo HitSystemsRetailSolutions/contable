@@ -71,12 +71,12 @@ client.on("message", (topic, missatge) => {
   // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
   if (topic.includes("Log_On")) {
     MqttLog = true;
-    console.log("📡 Log activat via MQTT")
+    logamqtt("📡 Log activat via MQTT")
     return;
   } 
   if (topic.includes("Log_Off")) {
+    logamqtt("📴 Log desactivat via MQTT")
     MqttLog = false;
-    console.log("📴 Log desactivat via MQTT")
     return;
   }
 
