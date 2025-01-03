@@ -44,7 +44,8 @@ const client = mqtt.connect(mqttOptions);
 client.on("connect", () => {
   console.log("Connectat al servidor MQTT", process.env.MQTT_HOST);
   // Subscripció al topic desitjat
-  client.subscribe(process.env.MQTT_CLIENT_ID + "/Conta/#", (err) => {
+
+  client.subscribe(process.env.MQTT_CLIENT_ID + "/Conta/#", { qos: 1 },(err) => {
     if (!err) {
       console.log(
         "Subscrit al topic: ",
