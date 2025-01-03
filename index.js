@@ -64,9 +64,10 @@ client.on("error", (err) => {
 });
 // Manejador per a missatges rebuts
 client.on("message", (topic, missatge) => {
-
+  // FEM CONSOLE.LOG D UN MISSATGE REBUT
+  process.stdout.write('📡')  
   // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
-  if (topic.includes("Log_On")) {
+ /* if (topic.includes("Log_On")) {
     MqttLog = true;
     logamqtt("📡 Log activat via MQTT")
     return;
@@ -76,6 +77,7 @@ client.on("message", (topic, missatge) => {
     MqttLog = false;
     return;
   }
+*/
 
   let data
   try {
@@ -698,6 +700,7 @@ async function revisaIndicadors(data) {
             FontColor: color,
           })
         }
+    process.stdout.write('.') 
     if (controlat.ultimMissatge !== missatge) {
       controlat.ultimMissatge = missatge;
       client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
