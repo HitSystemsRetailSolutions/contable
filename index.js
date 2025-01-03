@@ -5,6 +5,8 @@ import sql from "mssql";
 import moment from "moment";
 import 'dotenv/config';
 
+let MqttLog = false; // Variable global per controlar el log
+
 // Configuració de la connexió a la base de dades MSSQL
 const dbConfig = {
   user: process.env.DB_USER,
@@ -37,6 +39,10 @@ let estocPerLlicencia = {};
 //********************************************************************************/ MQTT
 // Connexió al servidor MQTT
 const client = mqtt.connect(mqttOptions);
+// si estem en debug, informem del url user i psw al que ens entem conectant per console.log
+logamqtt("Connectant al servidor MQTT:", process.env.MQTT_HOST);
+logamqtt("Amb l'usuari:", process.env.MQTT_USER);
+logamqtt("I la contrasenya:", process.env.MQTT_PASSWORD);
 
 client.on("connect", () => {
   console.log("Connectat al servidor MQTT", process.env.MQTT_HOST);
@@ -53,8 +59,27 @@ client.on("connect", () => {
   });
 });
 
+client.on("error", (err) => {
+  console.error("Error al connectar al servidor MQTT:", err);
+  console.log(
+    "Revisa la configuració de connexió al servidor MQTT (host, port, usuari i contrasenya)."
+  );
+});
 // Manejador per a missatges rebuts
 client.on("message", (topic, missatge) => {
+
+  // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
+  if (topic.includes("Log_On")) {
+    MqttLog = true;
+    console.log("📡 Log activat via MQTT")
+    return;
+  } 
+  if (topic.includes("Log_Off")) {
+    MqttLog = false;
+    console.log("📴 Log desactivat via MQTT")
+    return;
+  }
+
   let data
   try {
     data=JSON.parse(missatge);
@@ -112,6 +137,34 @@ function nomTaulaCompromiso(d) {
   return `Compromiso_${year}_${month}`;
 }
 
+
+function logamqtt(sqlSt) {
+  if (!MqttLog) return;
+
+  try {
+    // Mostra el SQL al terminal
+    console.log("📜 SQL Statement:");
+    console.log(sqlSt);
+
+    // Envia el SQL al servidor MQTT
+    if (client.connected) {
+      const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
+      client.publish(topic, sqlSt, (err) => {
+        if (err) {
+          console.error("❌ Error enviant el SQL per MQTT:", err);
+        } else {
+          console.log("📤 SQL enviat al topic:", topic);
+        }
+      });
+    } else {
+      console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
+    }
+  } catch (error) {
+    console.error("❌ Error en logamqtt:", error);
+  }
+}
+
+
 async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     const avui = new Date();
     const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
@@ -128,41 +181,51 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
       let sqlSt = "";
       let LlicenciaA = Llicencia;
 //      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
-      const anyActual = avui.getFullYear();
-      const mesActual = avui.getMonth(); // Mes actual (0-indexat)
-      const diesDelMes = new Date(anyActual, mesActual + 1, 0).getDate(); // Correcte: obté el darrer dia del mes
+      const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
       const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
       estocPerLlicencia[Llicencia] = {};
       estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
       estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
 
-      if (Empresa == "Fac_Camps") {
-        for (let dia = 1; dia <= diesDelMes; dia++) {
-          let d = new Date(avui.getFullYear(), avui.getMonth(), dia);
-          sqlSt += ` union select codiArticle as Article,sum(Quantitatservida) as s ,0 as v,0 as e from  [${nomTaulaServit(d)}] where client = ${Llicencia} and quantitatservida>0 group by codiArticle `
-        };
+      if (Empresa == "Fac_Camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
+        const dataInici = moment().subtract(1, "days"); // Ahir
+        const dataFi = moment().add(31, "days"); // 31 dies a partir d'avui
+        for (
+          let d = moment(dataInici);
+          d.isSameOrBefore(dataFi, "day");
+          d.add(1, "day")
+        ) {
+          sqlSt += ` union select codiArticle as Article, sum(Quantitatservida) as s, 0 as v, 0 as e 
+                    from [${nomTaulaServit(d.toDate())}] 
+                    where client = ${Llicencia} and quantitatservida > 0 
+                    group by codiArticle `;
+        }
         sqlSt = `use ${Empresa} 
-                 select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( 
-                    select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
-                    union select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
-                    ` + sqlSt
-      sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
-//console.log(sqlSt);
-      let result = await sql.query(sqlSt);
-      result.recordset.forEach(row => {
-        if(row.unitatsEncarregades>0)        
-          estocPerLlicencia[Llicencia][row.codiArticle] = {
-            actiu: true,
-            articleCodi: row.codiArticle,
-            ultimMissatge: "",  
-            estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
-            tipus: 'Encarrecs',
-            unitatsVenudes: parseFloat(row.UnitatsVenudes),
-            unitatsServides: parseFloat(row.UnitatsServides),
-            unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-            ultimaActualitzacio: new Date().toISOString()
-          };
-      });
+                  select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( 
+                      select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
+                      union 
+                      select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(mesPasat)}]  where botiga = ${Llicencia} group by plu
+                      union 
+                      select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
+                      ` + sqlSt
+        sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
+  //console.log(sqlSt);
+         logamqtt(sqlSt)
+        let result = await sql.query(sqlSt);
+        result.recordset.forEach(row => {
+          if(row.unitatsEncarregades>0)        
+            estocPerLlicencia[Llicencia][row.codiArticle] = {
+              actiu: true,
+              articleCodi: row.codiArticle,
+              ultimMissatge: "",  
+              estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
+              tipus: 'Encarrecs',
+              unitatsVenudes: parseFloat(row.UnitatsVenudes),
+              unitatsServides: parseFloat(row.UnitatsServides),
+              unitatsEncarregades: parseFloat(row.unitatsEncarregades),
+              ultimaActualitzacio: new Date().toISOString()
+            };
+        });
     }
     const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
     let lastWeekSameDayDia = moment().subtract(7, 'days').date();
@@ -235,7 +298,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
           objectiu,
           Min 
         END `;
-//console.log(sqlSt);          
+//console.log(sqlSt);   
+    logamqtt(sqlSt)
     let result2 = await sql.query(sqlSt);
     if (result2.recordset && result2.recordset.length > 0) 
     result2.recordset.forEach(async row => {
@@ -308,6 +372,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
         Min 
       END `;
 //console.log(sqlSt);          
+  logamqtt(sqlSt)
   result2 = await sql.query(sqlSt);
   result2.recordset.forEach(row => {
       historicArrayNew = [];
@@ -420,6 +485,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
             end    
           END`;
   //console.log(sqlSt);          
+      logamqtt(sqlSt)
       result2 = await sql.query(sqlSt);
       if (result2 && result2.recordset) {
         result2.recordset.forEach((row) => {
@@ -487,7 +553,7 @@ async function revisaIndicadors(data) {
       });
 
       Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
-        if (process.env.NODE_ENV === "Dsv") console.log(controlat);
+        logamqtt(controlat);
         missatge = controlat.ultimMissatge; // Creem el missatge
         if (controlat.tipus === "Encarrecs") {    // Si hi ha encarregs 
           controlat.estoc =
@@ -562,7 +628,7 @@ async function revisaIndicadors(data) {
             }
           });
 
-          if (process.env.NODE_ENV === "Dsv") console.log('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
+          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
           let dif = Math.floor(controlat.importVenut/controlat.importVenut7d * 100 )  -100 ;  // Calculem la diferència en percentatge
           let carasInc = ["🤑","😃","😄","😒","😥","😳","😟","💩","😠","😡","🤬","🤢","🤢"];
 
@@ -621,6 +687,7 @@ async function revisaIndicadors(data) {
 
 // Test code
 if (process.argv.includes('--test')) {
+  console.log('🧪 Test')
   test.describe('revisaIndicadors', () => {
   //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
     const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
@@ -676,6 +743,6 @@ if (process.argv.includes('--test')) {
 
   });
 }else{// Mantenir el programa en execució
+  console.log('🚀 Iniciat');
   process.stdin.resume();
 }
-
