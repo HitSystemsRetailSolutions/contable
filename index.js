@@ -4,6 +4,7 @@ import mqtt from "mqtt";
 import sql from "mssql";
 import moment from "moment";
 import 'dotenv/config';
+import net from "net";
 
 let MqttLog = false; // Variable global per controlar el log
 
@@ -63,9 +64,9 @@ client.on("error", (err) => {
     "Revisa la configuració de connexió al servidor MQTT (host, port, usuari i contrasenya)."
   );
 });
+
 // Manejador per a missatges rebuts
 client.on("message", (topic, missatge) => {
-  // FEM CONSOLE.LOG D UN MISSATGE REBUT
   process.stdout.write('📡')  
   // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
  /* if (topic.includes("Log_On")) {
@@ -87,6 +88,56 @@ client.on("message", (topic, missatge) => {
     console.error("Error al analitzar el missatge com a JSON:", parseError);
     return; // Si hi ha un error, aturem l'execució aquí i retornem
   }
+  tractaMissatge(data);
+});
+
+// Creem un servidor TCP al port 3039
+const server = net.createServer();
+
+server.listen(3039, () => {
+  console.log("🚀 Server started on port 3039!");
+});
+
+server.on("connection", (socket) => {
+  console.log("📡 Client connected");
+
+  socket.on("data", (data) => {
+    process.stdout.write("📡");
+    let missatge;
+    try {
+      // Convertim les dades a JSON
+      missatge = JSON.parse(data);
+
+      // Processem el missatge
+      tractaMissatge(missatge);
+
+      // Enviem resposta al client
+      socket.write(JSON.stringify({ status: "success", message: "Missatge rebut i processat correctament" }));
+    } catch (parseError) {
+      console.error("❌ Error al analitzar el missatge com a JSON:", parseError);
+      // Resposta d'error al client
+      socket.write(JSON.stringify({ status: "error", message: "Error al analitzar el missatge com a JSON" }));
+    }
+  });
+
+  socket.on("end", () => {
+    console.log("📴 Client disconnected");
+  });
+
+  socket.on("error", (err) => {
+    console.error("❌ Error al socket del client:", err);
+  });
+});
+
+// Gestionem errors del servidor
+server.on("error", (err) => {
+  console.error("❌ Error al servidor:", err);
+});
+
+//******************************************************************************************************************* */ Funcions de tractament de missatges
+
+
+function tractaMissatge(data) {
   let tipus = "Venta";
   if (data.tipus) tipus = data.tipus; 
   switch (tipus) {
@@ -105,7 +156,7 @@ client.on("message", (topic, missatge) => {
     default:
       console.log("Tipus de missatge desconegut:", tipus);
   }
-});
+}
 
 //******************************************************************************************************************* */ Funcions auxiliars
 function nomTaulaServit(d) {
