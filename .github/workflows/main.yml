@@ -4,7 +4,7 @@ on: workflow_dispatch  # Executa manualment
 
 jobs:
   ssh:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Installa ngrok
