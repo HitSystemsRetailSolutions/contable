@@ -6,3 +6,5 @@ services:
     environment:
       TZ : Europe/Madrid
     restart: unless-stopped
+    ports:
+     - 3039:3039
