@@ -46,7 +46,7 @@ client.on("connect", () => {
   console.log("Connectat al servidor MQTT", process.env.MQTT_HOST);
   // Subscripció al topic desitjat
 
-  client.subscribe(process.env.MQTT_CLIENT_ID + "/Conta/#", { qos: 1 },(err) => {
+  client.subscribe(process.env.MQTT_CLIENT_ID + "/Conta/#", { qos: 1 }, (err) => {
     if (!err) {
       console.log(
         "Subscrit al topic: ",
@@ -67,23 +67,23 @@ client.on("error", (err) => {
 
 // Manejador per a missatges rebuts
 client.on("message", (topic, missatge) => {
-  process.stdout.write('📡')  
+  process.stdout.write('📡')
   // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
- /* if (topic.includes("Log_On")) {
-    MqttLog = true;
-    logamqtt("📡 Log activat via MQTT")
-    return;
-  } 
-  if (topic.includes("Log_Off")) {
-    logamqtt("📴 Log desactivat via MQTT")
-    MqttLog = false;
-    return;
-  }
-*/
+  /* if (topic.includes("Log_On")) {
+     MqttLog = true;
+     logamqtt("📡 Log activat via MQTT")
+     return;
+   } 
+   if (topic.includes("Log_Off")) {
+     logamqtt("📴 Log desactivat via MQTT")
+     MqttLog = false;
+     return;
+   }
+ */
 
   let data
   try {
-    data=JSON.parse(missatge);
+    data = JSON.parse(missatge);
   } catch (parseError) {
     console.error("Error al analitzar el missatge com a JSON:", parseError);
     return; // Si hi ha un error, aturem l'execució aquí i retornem
@@ -139,18 +139,18 @@ server.on("error", (err) => {
 
 function tractaMissatge(data) {
   let tipus = "Venta";
-  if (data.tipus) tipus = data.tipus; 
+  if (data.tipus) tipus = data.tipus;
   switch (tipus) {
     case "ObreCaixa":
-      process.stdout.write('🏷️')  
+      process.stdout.write('🏷️')
       ObreCaixa(data);
       break;
     case "Venta":
-        process.stdout.write('🛒')  
-        revisaIndicadors(data);
-        break;
-    case "Encarrec","Encarrec":
-      process.stdout.write('⏰')  
+      process.stdout.write('🛒')
+      revisaIndicadors(data);
+      break;
+    case "Encarrec", "Encarrec":
+      process.stdout.write('⏰')
       revisaIndicadors(data);
       break;
     default:
@@ -191,98 +191,127 @@ function nomTaulaCompromiso(d) {
 
 function logamqtt(sqlSt) {
   if (!MqttLog) return;
-    try {
-      // Mostra el SQL original al terminal
-      console.log("📜 SQL Statement original:");
-      console.log(sqlSt);
-  
-      // Assegurar que el missatge sigui un string
-      let sqlMessage = typeof sqlSt === "string" ? sqlSt : JSON.stringify(sqlSt);
-  
-      // Màxim de caràcters per missatge
-      const maxLength = 1024;
-  
-      if (sqlMessage.length > maxLength) {
-        console.warn(`⚠️ El missatge SQL és massa llarg (${sqlMessage.length} caràcters). Es dividirà en parts.`);
-  
-        // Divideix el missatge en parts
-        const parts = [];
-        for (let i = 0; i < sqlMessage.length; i += maxLength) {
-          parts.push(sqlMessage.slice(i, i + maxLength));
-        }
-  
-        // Envia cada part amb un índex
-        parts.forEach((part, index) => {
-          const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql/part${index + 1}`;
-          if (client.connected) {
-            client.publish(topic, part, (err) => {
-              if (err) {
-                console.error(`❌ Error enviant la part ${index + 1} del SQL per MQTT:`, err);
-              } else {
-                console.log(`📤 SQL part ${index + 1} enviat al topic: ${topic}`);
-              }
-            });
-          } else {
-            console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
-          }
-        });
-      } else {
-        // Si no és massa llarg, envia el missatge complet
-        const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
+  try {
+    // Mostra el SQL original al terminal
+    console.log("📜 SQL Statement original:");
+    console.log(sqlSt);
+
+    // Assegurar que el missatge sigui un string
+    let sqlMessage = typeof sqlSt === "string" ? sqlSt : JSON.stringify(sqlSt);
+
+    // Màxim de caràcters per missatge
+    const maxLength = 1024;
+
+    if (sqlMessage.length > maxLength) {
+      console.warn(`⚠️ El missatge SQL és massa llarg (${sqlMessage.length} caràcters). Es dividirà en parts.`);
+
+      // Divideix el missatge en parts
+      const parts = [];
+      for (let i = 0; i < sqlMessage.length; i += maxLength) {
+        parts.push(sqlMessage.slice(i, i + maxLength));
+      }
+
+      // Envia cada part amb un índex
+      parts.forEach((part, index) => {
+        const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql/part${index + 1}`;
         if (client.connected) {
-          client.publish(topic, sqlMessage, (err) => {
+          client.publish(topic, part, (err) => {
             if (err) {
-              console.error("❌ Error enviant el SQL per MQTT:", err);
+              console.error(`❌ Error enviant la part ${index + 1} del SQL per MQTT:`, err);
             } else {
-              console.log("📤 SQL enviat al topic:", topic);
+              console.log(`📤 SQL part ${index + 1} enviat al topic: ${topic}`);
             }
           });
         } else {
           console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
         }
+      });
+    } else {
+      // Si no és massa llarg, envia el missatge complet
+      const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
+      if (client.connected) {
+        client.publish(topic, sqlMessage, (err) => {
+          if (err) {
+            console.error("❌ Error enviant el SQL per MQTT:", err);
+          } else {
+            console.log("📤 SQL enviat al topic:", topic);
+          }
+        });
+      } else {
+        console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
       }
-    } catch (error) {
-      console.error("❌ Error en logamqtt:", error);
     }
+  } catch (error) {
+    console.error("❌ Error en logamqtt:", error);
   }
-  
+}
+
 
 async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
-    const avui = new Date();
-    const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
-    const dataIniciUsada = dataInici ? new Date(dataInici) : dataIniciDefecte;
-    try {
-      if (
-        dataInici == null &&
-        estocPerLlicencia[Llicencia] &&
-        estocPerLlicencia[Llicencia]["LastUpdate"] &&
-        new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
-        console.log('🔄')  
-        // si sql no esta conectat la conectem i esperem a que estigui conectat
-      if (!sql.connected) await sql.connect(dbConfig);
-      let sqlSt = "";
-      let LlicenciaA = Llicencia;
-//      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
-      const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
-      const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-      estocPerLlicencia[Llicencia] = {};
-      estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
-      estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
+  const avui = new Date();
+  const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
+  const dataIniciUsada = dataInici ? new Date(dataInici) : dataIniciDefecte;
+  try {
+    if (
+      dataInici == null &&
+      estocPerLlicencia[Llicencia] &&
+      estocPerLlicencia[Llicencia]["LastUpdate"] &&
+      new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
+    console.log('🔄')
+    // si sql no esta conectat la conectem i esperem a que estigui conectat
+    if (!sql.connected) await sql.connect(dbConfig);
+    let sqlSt = "";
+    let LlicenciaA = Llicencia;
+    //      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
+    const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
+    const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
+    estocPerLlicencia[Llicencia] = {};
+    estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
+    estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
 
-      if (Empresa === "Fac_Demo" || Empresa === "Fac_Camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
-        const dataInici = moment().subtract(1, "days"); // Ahir
-        const dataFi = moment().add(31, "days"); // 31 dies a partir d'avui
-        for (
-          let d = moment(dataInici);
-          d.isSameOrBefore(dataFi, "day");
-          d.add(1, "day")
-        ) {
-          sqlSt += ` union select codiArticle as Article, sum(Quantitatservida) as s, 0 as v, 0 as e 
+    if (Empresa === "Fac_Demo" || Empresa === "Fac_Camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
+      const dataInici = moment().subtract(1, "days"); // Ahir
+      const dataFi = moment().add(31, "days"); // 31 dies a partir d'avui
+      let crea = '';
+      for (
+        let d = moment(dataInici);
+        d.isSameOrBefore(dataFi, "day");
+        d.add(1, "day")
+      ) {
+        crea += ` IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaServit(d.toDate())}')
+                      BEGIN
+                      CREATE TABLE [dbo].[${nomTaulaServit(d.toDate())}] (
+                        [Id] [uniqueidentifier] NULL,
+                        [TimeStamp] [datetime] NULL,
+                        [QuiStamp] [nvarchar](255) NULL,
+                        [Client] [float] NULL,
+                        [CodiArticle] [int] NULL,
+                        [PluUtilitzat] [nvarchar](255) NULL,
+                        [Viatge] [nvarchar](255) NULL,
+                        [Equip] [nvarchar](255) NULL,
+                        [QuantitatDemanada] [float] NULL,
+                        [QuantitatTornada] [float] NULL,
+                        [QuantitatServida] [float] NULL,
+                        [MotiuModificacio] [nvarchar](255) NULL,
+                        [Hora] [float] NULL,
+                        [TipusComanda] [float] NULL,
+                        [Comentari] [nvarchar](255) NULL,
+                        [ComentariPer] [nvarchar](255) NULL,
+                        [Atribut] [int] NULL,
+                        [CitaDemanada] [nvarchar](255) NULL,
+                        [CitaServida] [nvarchar](255) NULL,
+                        [CitaTornada] [nvarchar](255) NULL
+                      )
+                    END 
+                    `
+
+        sqlSt += ` union select codiArticle as Article, sum(Quantitatservida) as s, 0 as v, 0 as e 
                     from [${nomTaulaServit(d.toDate())}] 
                     where client = ${Llicencia} and quantitatservida > 0 
                     group by codiArticle `;
-        }
-        sqlSt = `use ${Empresa} 
+      }
+      sqlSt = `use ${Empresa} 
+                  ${crea}
                   select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( 
                       select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
                       union 
@@ -290,24 +319,24 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                       union 
                       select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
                       ` + sqlSt
-        sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
-  //console.log(sqlSt);
-        logamqtt(sqlSt)
-        let result = await sql.query(sqlSt);
-        result.recordset.forEach(row => {
-          if(row.unitatsEncarregades>0)        
-            estocPerLlicencia[Llicencia][row.codiArticle] = {
-              actiu: true,
-              articleCodi: row.codiArticle,
-              ultimMissatge: "",  
-              estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
-              tipus: 'Encarrecs',
-              unitatsVenudes: parseFloat(row.UnitatsVenudes),
-              unitatsServides: parseFloat(row.UnitatsServides),
-              unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-              ultimaActualitzacio: new Date().toISOString()
-            };
-        });
+      sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
+      // console.log(sqlSt);
+      logamqtt(sqlSt)
+      let result = await sql.query(sqlSt);
+      result.recordset.forEach(row => {
+        if (row.unitatsEncarregades > 0)
+          estocPerLlicencia[Llicencia][row.codiArticle] = {
+            actiu: true,
+            articleCodi: row.codiArticle,
+            ultimMissatge: "",
+            estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
+            tipus: 'Encarrecs',
+            unitatsVenudes: parseFloat(row.UnitatsVenudes),
+            unitatsServides: parseFloat(row.UnitatsServides),
+            unitatsEncarregades: parseFloat(row.unitatsEncarregades),
+            ultimaActualitzacio: new Date().toISOString()
+          };
+      });
     }
     const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
     let lastWeekSameDayDia = moment().subtract(7, 'days').date();
@@ -316,7 +345,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     let unitatsVenudesNew = 0;
     let unitatsVenudes7dNew = 0;
 
-    sqlSt=`use ${Empresa} 
+    sqlSt = `use ${Empresa} 
         IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
         BEGIN   
           SELECT 
@@ -338,12 +367,12 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
               (SELECT comentaris AS plu, objectiu 
               FROM [${nomTaulaCompromiso(avui)}] 
               WHERE dia = '${moment(avui).format(
-                "YYYY-MM-DD"
-              )}' AND botiga =  ${Llicencia}) o
+      "YYYY-MM-DD"
+    )}' AND botiga =  ${Llicencia}) o
           JOIN 
           [${nomTaulaVenut(
-            avui
-          )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
+      avui
+    )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
           GROUP BY 
               (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
               objectiu,
@@ -360,12 +389,12 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
               (SELECT comentaris AS plu, objectiu 
               FROM [${nomTaulaCompromiso(avui)}] 
               WHERE dia = '${moment(avui).format(
-                "YYYY-MM-DD"
-              )}' AND botiga =  ${Llicencia}) o
+      "YYYY-MM-DD"
+    )}' AND botiga =  ${Llicencia}) o
           JOIN 
           [${nomTaulaVenut(
-            new Date(lastWeekSameDay)
-          )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
+      new Date(lastWeekSameDay)
+    )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
           GROUP BY 
               (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
               objectiu,
@@ -380,16 +409,16 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
           objectiu,
           Min 
         END `;
-//console.log(sqlSt);   
+    //console.log(sqlSt);   
     logamqtt(sqlSt)
     let result2 = await sql.query(sqlSt);
-    if (result2.recordset && result2.recordset.length > 0) 
-    result2.recordset.forEach(async row => {
+    if (result2.recordset && result2.recordset.length > 0)
+      result2.recordset.forEach(async row => {
         historicArrayNew = [];
         unitatsVenudesNew = parseFloat(row.SumaAvui);
         unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
         objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
-  sqlSt=`use ${Empresa} 
+        sqlSt = `use ${Empresa} 
       IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
       BEGIN   
          SELECT 
@@ -411,12 +440,12 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
              (SELECT comentaris AS plu, objectiu 
              FROM [${nomTaulaCompromiso(avui)}] 
              WHERE dia = '${moment(avui).format(
-               "YYYY-MM-DD"
-             )}' AND botiga =  ${Llicencia}) o
+          "YYYY-MM-DD"
+        )}' AND botiga =  ${Llicencia}) o
          JOIN 
          [${nomTaulaVenut(
-           avui
-         )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
+          avui
+        )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
          GROUP BY 
              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
              objectiu,
@@ -433,12 +462,12 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
              (SELECT comentaris AS plu, objectiu 
              FROM [${nomTaulaCompromiso(avui)}] 
              WHERE dia = '${moment(avui).format(
-               "YYYY-MM-DD"
-             )}' AND botiga =  ${Llicencia}) o
+          "YYYY-MM-DD"
+        )}' AND botiga =  ${Llicencia}) o
          JOIN 
          [${nomTaulaVenut(
-           new Date(lastWeekSameDay)
-         )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
+          new Date(lastWeekSameDay)
+        )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
          GROUP BY 
              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
              objectiu,
@@ -453,32 +482,48 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
          objectiu,
         Min 
       END `;
-//console.log(sqlSt);          
-  logamqtt(sqlSt)
-  result2 = await sql.query(sqlSt);
-  result2.recordset.forEach(row => {
-      historicArrayNew = [];
-      unitatsVenudesNew = parseFloat(row.SumaAvui);
-      unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
-      objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
+        //console.log(sqlSt);          
+        logamqtt(sqlSt)
+        result2 = await sql.query(sqlSt);
+        result2.recordset.forEach(row => {
+          historicArrayNew = [];
+          unitatsVenudesNew = parseFloat(row.SumaAvui);
+          unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+          objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
 
-        if (estocPerLlicencia[Llicencia][row.codiArticle]) {
-          if(estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
-          if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
-          if(estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
-          if(estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
-        }
-      if (estocPerLlicencia[Llicencia][row.articleCodi]) {
-        if(estocPerLlicencia[Llicencia][row.articleCodi].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.articleCodi].historic;
-        if(estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes + unitatsVenudesNew;
-        if(estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d + unitatsVenudes7dNew;
-        if(estocPerLlicencia[Llicencia][row.articleCodi].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.articleCodi].objectiu + objectiuNew;
-      }
+          if (estocPerLlicencia[Llicencia][row.codiArticle]) {
+            if (estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
+            if (estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
+            if (estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
+            if (estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
+          }
+          if (estocPerLlicencia[Llicencia][row.articleCodi]) {
+            if (estocPerLlicencia[Llicencia][row.articleCodi].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.articleCodi].historic;
+            if (estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes + unitatsVenudesNew;
+            if (estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d + unitatsVenudes7dNew;
+            if (estocPerLlicencia[Llicencia][row.articleCodi].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.articleCodi].objectiu + objectiuNew;
+          }
 
-        estocPerLlicencia[Llicencia][row.codiArticle] = {
+          estocPerLlicencia[Llicencia][row.codiArticle] = {
+            actiu: true,
+            tipus: "Compromisos",
+            articleCodi: row.codiArticle,
+            ultimMissatge: "",
+            historic: historicArrayNew.concat({
+              Minut: row.Minut,
+              SumaAvui: row.SumaAvui,
+              SumaPast: row.SumaPast,
+            }),
+            unitatsVenudes: parseFloat(unitatsVenudesNew),
+            unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
+            objectiu: objectiuNew,
+            minutCalcul: minutCalcul,
+          };
+        });
+        estocPerLlicencia[Llicencia][row.articleCodi] = {
           actiu: true,
           tipus: "Compromisos",
-          articleCodi: row.codiArticle,
+          articleCodi: row.articleCodi,
           ultimMissatge: "",
           historic: historicArrayNew.concat({
             Minut: row.Minut,
@@ -491,24 +536,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
           minutCalcul: minutCalcul,
         };
       });
-      estocPerLlicencia[Llicencia][row.articleCodi] = {
-        actiu: true,
-        tipus: "Compromisos",
-        articleCodi: row.articleCodi,
-        ultimMissatge: "",
-        historic: historicArrayNew.concat({
-          Minut: row.Minut,
-          SumaAvui: row.SumaAvui,
-          SumaPast: row.SumaPast,
-        }),
-        unitatsVenudes: parseFloat(unitatsVenudesNew),
-        unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
-        objectiu: objectiuNew,
-        minutCalcul: minutCalcul,
-      };
-    });
 
-      sqlSt = `use ${Empresa} 
+    sqlSt = `use ${Empresa} 
           IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
           BEGIN
             CREATE TABLE IndicadorsBotiga (
@@ -524,8 +553,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
             Param5 nvarchar(255)
           )
           END `
-    let tipus = 'IndicadorVenut';       
-    sqlSt=`use ${Empresa} 
+    let tipus = 'IndicadorVenut';
+    sqlSt = `use ${Empresa} 
           IF EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')      
           BEGIN   
           if (Select count(*) from IndicadorsBotiga Where Botiga = ${Llicencia} and Actiu = '1' and Tipus = '${tipus}') > 0
@@ -543,8 +572,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                     SUM(v.import) AS import
                 FROM 
                 [${nomTaulaVenut(
-                  avui
-                )}] v where v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
+      avui
+    )}] v where v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
                 GROUP BY 
                     (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
                   UNION ALL
@@ -555,8 +584,8 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                     SUM(v.import) AS import
                 FROM 
                 [${nomTaulaVenut(
-                  new Date(lastWeekSameDay)
-                )}] v where v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia}
+      new Date(lastWeekSameDay)
+    )}] v where v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia}
                 GROUP BY 
                     (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
                 ) a 
@@ -566,42 +595,42 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                 Min
             end    
           END`;
-  //console.log(sqlSt);          
-      logamqtt(sqlSt)
-      result2 = await sql.query(sqlSt);
-      if (result2 && result2.recordset) {
-        result2.recordset.forEach((row) => {
-          historicArrayNew = [];
-          let importVenutNew = parseFloat(row.SumaAvui);
-          let importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
+    //console.log(sqlSt);          
+    logamqtt(sqlSt)
+    result2 = await sql.query(sqlSt);
+    if (result2 && result2.recordset) {
+      result2.recordset.forEach((row) => {
+        historicArrayNew = [];
+        let importVenutNew = parseFloat(row.SumaAvui);
+        let importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
 
-          if (estocPerLlicencia[Llicencia][tipus]) {
-            historicArrayNew    = estocPerLlicencia[Llicencia][tipus].historic;
-            importVenutNew = estocPerLlicencia[Llicencia][tipus].importVenut + parseFloat(importVenutNew);
-            importVenut7dNew    = estocPerLlicencia[Llicencia][tipus].importVenut7d + parseFloat(importVenut7dNew);
-          }
+        if (estocPerLlicencia[Llicencia][tipus]) {
+          historicArrayNew = estocPerLlicencia[Llicencia][tipus].historic;
+          importVenutNew = estocPerLlicencia[Llicencia][tipus].importVenut + parseFloat(importVenutNew);
+          importVenut7dNew = estocPerLlicencia[Llicencia][tipus].importVenut7d + parseFloat(importVenut7dNew);
+        }
 
-          estocPerLlicencia[Llicencia][tipus] = {
-            actiu: true,
-            tipus: tipus,
-            articleCodi: tipus,
-            ultimMissatge: "",
-            historic: historicArrayNew.concat({
-              Minut: row.Minut,
-              SumaAvui: row.SumaAvui,
-              SumaPast: row.SumaPast,
-            }),
-            importVenut: parseFloat(importVenutNew),
-            importVenut7d: parseFloat(importVenut7dNew),
-            minutCalcul: minutCalcul,
-          };
-        });
-      }
-    } catch (error) {
-      console.error(error);
-      // Gestiona l'error o llança'l de nou si és necessari.
-      throw error; // Llançar l'error farà que la promesa sigui rebutjada.
+        estocPerLlicencia[Llicencia][tipus] = {
+          actiu: true,
+          tipus: tipus,
+          articleCodi: tipus,
+          ultimMissatge: "",
+          historic: historicArrayNew.concat({
+            Minut: row.Minut,
+            SumaAvui: row.SumaAvui,
+            SumaPast: row.SumaPast,
+          }),
+          importVenut: parseFloat(importVenutNew),
+          importVenut7d: parseFloat(importVenut7dNew),
+          minutCalcul: minutCalcul,
+        };
+      });
     }
+  } catch (error) {
+    console.error(error);
+    // Gestiona l'error o llança'l de nou si és necessari.
+    throw error; // Llançar l'error farà que la promesa sigui rebutjada.
+  }
 }
 // Quan es rep un missatge MQTT
 async function ObreCaixa(data) {
@@ -610,7 +639,7 @@ async function ObreCaixa(data) {
 /********************************************** */
 // Quan es rep un missatge MQTT
 async function revisaIndicadors(data) {
-// Comprovar si 'data' té la propietat 'Articles' i que és una array
+  // Comprovar si 'data' té la propietat 'Articles' i que és una array
   let missatge = ""
   let ImportTotalTicket = 0;
   if (data && data.Articles && Array.isArray(data.Articles)) {
@@ -618,19 +647,19 @@ async function revisaIndicadors(data) {
       await initVectorLlicencia(data.Llicencia, data.Empresa);
       const minutCalcul = new Date().getHours() * 60 + Math.floor(new Date().getMinutes()); // Calcula el minut actual (0-47)
       let tipus = "Venta";
-      if (data.tipus) tipus = data.tipus; 
+      if (data.tipus) tipus = data.tipus;
       data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
-        let articleCodi=0
-        if(article.articleCodi) articleCodi = article.articleCodi
-        if(article.CodiArticle) articleCodi = article.CodiArticle
+        let articleCodi = 0
+        if (article.articleCodi) articleCodi = article.articleCodi
+        if (article.CodiArticle) articleCodi = article.CodiArticle
         switch (tipus) {
           case "Venta":
-            ImportTotalTicket+= parseFloat(article.import);
+            ImportTotalTicket += parseFloat(article.import);
             if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
-          break;
+            break;
           case "Encarreg":
             if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades)).toFixed(3))
-          break;
+            break;
         }
       });
 
@@ -642,10 +671,10 @@ async function revisaIndicadors(data) {
             parseFloat(controlat.unitatsVenudes) -
             parseFloat(controlat.unitatsEncarregades);
           controlat.ultimaActualitzacio = new Date().toISOString();
-          let texte = controlat.estoc + ' = ' +  parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
+          let texte = controlat.estoc + ' = ' + parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
           let size = 12
           let color = "Black"
-          if (controlat.estoc <  0){
+          if (controlat.estoc < 0) {
             color = "Red"
             size = 17
             texte = '🤢' + texte
@@ -667,7 +696,7 @@ async function revisaIndicadors(data) {
             FontSize: size,
             FontColor: color,
           })
-//console.log(missatge)          
+          //console.log(missatge)          
         } else if (controlat.tipus === "Compromisos") {
           controlat.historic.forEach((historic) => {
             if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
@@ -676,12 +705,12 @@ async function revisaIndicadors(data) {
             }
           });
 
-          missatge = parseFloat(controlat.unitatsVenudes) > parseFloat(controlat.objectiu) ? "😄": "💩";
+          missatge = parseFloat(controlat.unitatsVenudes) > parseFloat(controlat.objectiu) ? "😄" : "💩";
           let dif = Math.floor(controlat.unitatsVenudes - controlat.objectiu);
           let carasInc = ["", "😃", "🍒", "🤢"];
           if (dif >= 2) missatge = carasInc[0];
-          else if (dif === 1)  missatge = carasInc[1]; // Bé, supera l'objectiu per 1 unitat
-          else if (dif === 0)  missatge = carasInc[1];
+          else if (dif === 1) missatge = carasInc[1]; // Bé, supera l'objectiu per 1 unitat
+          else if (dif === 0) missatge = carasInc[1];
           else if (dif === -1) missatge = carasInc[2];
           else if (dif === -2) missatge = carasInc[2] + carasInc[2];
           else if (dif === -3) missatge = carasInc[2] + carasInc[2] + carasInc[2];
@@ -691,16 +720,17 @@ async function revisaIndicadors(data) {
           else if (dif <= -6) missatge = carasInc[3];
           else if (dif >= 1) missatge = "";
 
-          missatge = JSON.stringify({Llicencia: data.Llicencia,
+          missatge = JSON.stringify({
+            Llicencia: data.Llicencia,
             articleCodi: controlat.articleCodi,
-                                     EstocActualitzat: missatge,
-                                     FontSize: 20,
-                                     FontColor: "Black",
-                                   })
+            EstocActualitzat: missatge,
+            FontSize: 20,
+            FontColor: "Black",
+          })
         } else if (controlat.tipus === "IndicadorVenut") {
           controlat.articleCodi = 'IndicadorPos1';
-          if(!ImportTotalTicket) ImportTotalTicket=0;
-          controlat.importVenut = parseFloat(controlat.importVenut) + parseFloat(ImportTotalTicket); 
+          if (!ImportTotalTicket) ImportTotalTicket = 0;
+          controlat.importVenut = parseFloat(controlat.importVenut) + parseFloat(ImportTotalTicket);
           controlat.historic.forEach((historic) => {
             if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
               controlat.importVenut7d = parseFloat(controlat.importVenut7d) + parseFloat(historic.SumaPast);
@@ -709,11 +739,11 @@ async function revisaIndicadors(data) {
             }
           });
 
-//          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
-          let dif = Math.floor(controlat.importVenut/controlat.importVenut7d * 100 )  -100 ;  // Calculem la diferència en percentatge
-          let carasInc = ["🤑","😃","😄","😒","😥","😳","😟","💩","😠","😡","🤬","🤢","🤢"];
+          //          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
+          let dif = Math.floor(controlat.importVenut / controlat.importVenut7d * 100) - 100;  // Calculem la diferència en percentatge
+          let carasInc = ["🤑", "😃", "😄", "😒", "😥", "😳", "😟", "💩", "😠", "😡", "🤬", "🤢", "🤢"];
 
-          let  Import = Math.round(controlat.importVenut) - Math.round(controlat.importVenut7d)
+          let Import = Math.round(controlat.importVenut) - Math.round(controlat.importVenut7d)
           let color = "Black"
           let size = 17
           if (dif < 0) {
@@ -721,29 +751,29 @@ async function revisaIndicadors(data) {
             size = 20
           }
           // si en el estring controlat.ultimMissatge  havia el texto black o green i ara es vermell o gran, enviem el missatge
-          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Green')) && (color === 'Red')){
+          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Green')) && (color === 'Red')) {
             // Hem pasat de verd o negre a vermell Activem avisos x producte 
 
           }
-          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Red')) && (color === 'Green')){
-          // Hem pasat de Red o negre a verd Desactivem Activem avisos x producte 
+          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Red')) && (color === 'Green')) {
+            // Hem pasat de Red o negre a verd Desactivem Activem avisos x producte 
 
           }
-    
+
           missatge = carasInc[5] + ' ' + Import;
-          if      (dif >20  )  missatge= carasInc[0] + ' ' + Import;
-          else if (dif >10  )  missatge= carasInc[1] + ' ' + Import;
-          else if (dif >0   )  missatge= carasInc[2] + ' ' + Import;
-          else if (dif > -5 )  missatge= carasInc[3] + ' ' + Import;
-          else if (dif > -10)  missatge= carasInc[4] + ' ' + Import;
-          else if (dif > -15)  missatge= carasInc[5] + ' ' + Import;
-          else if (dif > -18)  missatge= carasInc[6] + ' ' + Import;
-          else if (dif > -20)  missatge= carasInc[7] + ' ' + Import;
-          else if (dif > -22)  missatge= carasInc[8] + ' ' + Import;
-          else if (dif > -24)  missatge= carasInc[9] + ' ' + Import;
-          else if (dif > -25)  missatge= carasInc[10] + ' ' + Import;
-          else if (dif > -30)  missatge= carasInc[11] + ' ' + Import;
-          else if (dif > -50)  missatge= carasInc[12] + ' ' + Import;
+          if (dif > 20) missatge = carasInc[0] + ' ' + Import;
+          else if (dif > 10) missatge = carasInc[1] + ' ' + Import;
+          else if (dif > 0) missatge = carasInc[2] + ' ' + Import;
+          else if (dif > -5) missatge = carasInc[3] + ' ' + Import;
+          else if (dif > -10) missatge = carasInc[4] + ' ' + Import;
+          else if (dif > -15) missatge = carasInc[5] + ' ' + Import;
+          else if (dif > -18) missatge = carasInc[6] + ' ' + Import;
+          else if (dif > -20) missatge = carasInc[7] + ' ' + Import;
+          else if (dif > -22) missatge = carasInc[8] + ' ' + Import;
+          else if (dif > -24) missatge = carasInc[9] + ' ' + Import;
+          else if (dif > -25) missatge = carasInc[10] + ' ' + Import;
+          else if (dif > -30) missatge = carasInc[11] + ' ' + Import;
+          else if (dif > -50) missatge = carasInc[12] + ' ' + Import;
           missatge = JSON.stringify({
             Llicencia: data.Llicencia,
             articleCodi: controlat.articleCodi,
@@ -752,18 +782,18 @@ async function revisaIndicadors(data) {
             FontColor: color,
           })
         }
-    if (controlat.ultimMissatge !== missatge) {
-      controlat.ultimMissatge = missatge;
-      client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`,controlat.ultimMissatge);
-      //console.log(controlat.ultimMissatge)
-      process.stdout.write('📨')            
-    }        
+        if (controlat.ultimMissatge !== missatge) {
+          controlat.ultimMissatge = missatge;
+          client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`, controlat.ultimMissatge);
+          //console.log(controlat.ultimMissatge)
+          process.stdout.write('📨')
+        }
       });
     } catch (error) {
       console.error("Error handling stock: ", error);
     }
   }
-  process.stdout.write('.') 
+  process.stdout.write('.')
 }
 
 
@@ -771,9 +801,9 @@ async function revisaIndicadors(data) {
 if (process.argv.includes('--test')) {
   console.log('🧪 Test')
   test.describe('revisaIndicadors', () => {
-  //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
-    const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
-    let clientMqttTest  
+    //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
+    const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}')
+    let clientMqttTest
 
     test.before(async () => {
       await new Promise((resolve, reject) => {
@@ -824,7 +854,7 @@ if (process.argv.includes('--test')) {
     });
 
   });
-}else{// Mantenir el programa en execució
+} else {// Mantenir el programa en execució
   console.log('🚀 Iniciat');
   process.stdin.resume();
 }
