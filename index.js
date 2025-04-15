@@ -269,7 +269,7 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
     estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
     estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
 
-    if (Empresa === "Fac_Demo" || Empresa === "Fac_Camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
+    if (Empresa.toLowerCase() === "fac_demo" || Empresa.toLowerCase() === "fac_camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
       const dataInici = moment().subtract(1, "days"); // Ahir
       const dataFi = moment().add(31, "days"); // 31 dies a partir d'avui
       let crea = '';
