@@ -99,7 +99,7 @@ server.listen(3039, () => {
 });
 
 server.on("connection", (socket) => {
-  console.log("📡 Client connected");
+  //console.log("📡 Client connected");
 
   socket.on("data", (data) => {
     process.stdout.write("📡");
@@ -121,7 +121,7 @@ server.on("connection", (socket) => {
   });
 
   socket.on("end", () => {
-    console.log("📴 Client disconnected");
+    //console.log("📴 Client disconnected");
   });
 
   socket.on("error", (err) => {
@@ -657,7 +657,7 @@ async function revisaIndicadors(data) {
             ImportTotalTicket += parseFloat(article.import);
             if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
             break;
-          case "Encarreg":
+          case "Encarrec":
             if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades)).toFixed(3))
             break;
         }
