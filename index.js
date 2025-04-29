@@ -1,12 +1,21 @@
 import { test, describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
-import mqtt from "mqtt";
-import sql from "mssql";
-import moment from "moment";
+import mqtt from 'mqtt';
+import sql from 'mssql';
+import moment from 'moment';
 import 'dotenv/config';
-import net from "net";
+import net from 'net';
 
-let MqttLog = false; // Variable global per controlar el log
+const DEBUG = process.env.DEBUG?.toLowerCase() === 'true';
+
+function log(...args) {
+  // Unifica logs i afegeix marca temporal
+  const stamp = new Date().toISOString();
+  console.log(stamp, ...args);
+}
+function dbg(...args) {
+  if (DEBUG) log('[DEBUG]', ...args);
+}
 
 // Configuració de la connexió a la base de dades MSSQL
 const dbConfig = {
@@ -37,55 +46,39 @@ const mqttOptions = {
 // Dades emmagatzemades en memòria
 let estocPerLlicencia = {};
 
-//********************************************************************************/ MQTT
+/******************************* MQTT ****************************************/
 // Connexió al servidor MQTT
+log('➜ Iniciant client MQTT…');
 const client = mqtt.connect(mqttOptions);
 // si estem en debug, informem del url user i psw al que ens entem conectant per console.log
 
-client.on("connect", () => {
-  console.log("Connectat al servidor MQTT", process.env.MQTT_HOST);
+client.on('connect', () => {
+  log('✅ Connectat al servidor MQTT', process.env.MQTT_HOST);
   // Subscripció al topic desitjat
 
-  client.subscribe(process.env.MQTT_CLIENT_ID + "/Conta/#", { qos: 1 }, (err) => {
+  client.subscribe(process.env.MQTT_CLIENT_ID + '/Conta/#', { qos: 1 }, (err) => {
     if (!err) {
-      console.log(
-        "Subscrit al topic: ",
-        process.env.MQTT_CLIENT_ID + "/Conta/#"
-      );
+      log('📡 Subscrit al topic:', process.env.MQTT_CLIENT_ID + "/Conta/#");
     } else {
-      console.log("Error al subscriure al topic:", err);
+      log('❌ Error al subscriure al topic:', err);
     }
   });
 });
 
-client.on("error", (err) => {
-  console.error("Error al connectar al servidor MQTT:", err);
-  console.log(
-    "Revisa la configuració de connexió al servidor MQTT (host, port, usuari i contrasenya)."
-  );
-});
+client.on('reconnect', () => log('🔄 Reintentant connexió MQTT…'));
+client.on('close', () => log('🔌 Connexió MQTT tancada'));
+client.on('offline', () => log('📴 Client MQTT offline'));
+client.on('error', (err) => log('❌ Error MQTT:', err));
 
 // Manejador per a missatges rebuts
-client.on("message", (topic, missatge) => {
-  process.stdout.write('📡')
-  // Control del log a partir del missatge rebut si dintre del topic posa Log_On o Log_Off
-  /* if (topic.includes("Log_On")) {
-     MqttLog = true;
-     logamqtt("📡 Log activat via MQTT")
-     return;
-   } 
-   if (topic.includes("Log_Off")) {
-     logamqtt("📴 Log desactivat via MQTT")
-     MqttLog = false;
-     return;
-   }
- */
-
-  let data
+client.on('message', (topic, missatge) => {
+  dbg('← Missatge rebut per topic', topic, '\n', missatge.toString());
+  process.stdout.write('📡');
+  let data;
   try {
     data = JSON.parse(missatge);
   } catch (parseError) {
-    console.error("Error al analitzar el missatge com a JSON:", parseError);
+    log('❌ Error parsejant JSON del missatge MQTT:', parseError);
     return; // Si hi ha un error, aturem l'execució aquí i retornem
   }
   tractaMissatge(data);
@@ -95,14 +88,15 @@ client.on("message", (topic, missatge) => {
 const server = net.createServer();
 
 server.listen(3039, () => {
-  console.log("🚀 Server started on port 3039!");
+  log('🚀 Servidor TCP escoltant al port 3039');
 });
 
-server.on("connection", (socket) => {
-  console.log("📡 Client connected");
+server.on('connection', (socket) => {
+  dbg('➕ Client TCP connectat');
 
-  socket.on("data", (data) => {
-    process.stdout.write("📡");
+  socket.on('data', (data) => {
+    dbg('← Trama TCP rebuda', data.toString());
+    process.stdout.write('📡');
     let missatge;
     try {
       // Convertim les dades a JSON
@@ -112,175 +106,135 @@ server.on("connection", (socket) => {
       tractaMissatge(missatge);
 
       // Enviem resposta al client
-      socket.write(JSON.stringify({ status: "success", message: "Missatge rebut i processat correctament" }));
+      socket.write(JSON.stringify({ status: 'success', message: 'Missatge rebut i processat correctament' }));
     } catch (parseError) {
-      console.error("❌ Error al analitzar el missatge com a JSON:", parseError);
+      log('❌ Error al processar el missatge:', parseError);
       // Resposta d'error al client
-      socket.write(JSON.stringify({ status: "error", message: "Error al analitzar el missatge com a JSON" }));
+      socket.write(JSON.stringify({ status: 'error', message: 'Error al analitzar el missatge com a JSON' }));
     }
   });
 
-  socket.on("end", () => {
-    console.log("📴 Client disconnected");
-  });
-
-  socket.on("error", (err) => {
-    console.error("❌ Error al socket del client:", err);
-  });
+  socket.on('end', () => dbg('➖ Client TCP desconnectat'));
+  socket.on('error', (err) => log('❌ Error al socket TCP:', err));
 });
 
 // Gestionem errors del servidor
-server.on("error", (err) => {
-  console.error("❌ Error al servidor:", err);
-});
 
-//******************************************************************************************************************* */ Funcions de tractament de missatges
+server.on('error', (err) => log('❌ Error servidor TCP:', err));
 
-
-function tractaMissatge(data) {
-  let tipus = "Venta";
-  if (data.tipus) tipus = data.tipus;
-  switch (tipus) {
-    case "ObreCaixa":
-      process.stdout.write('🏷️')
-      ObreCaixa(data);
-      break;
-    case "Venta":
-      process.stdout.write('🛒')
-      revisaIndicadors(data);
-      break;
-    case "Encarrec", "Encarrec":
-      process.stdout.write('⏰')
-      revisaIndicadors(data);
-      break;
-    default:
-      console.log("Tipus de missatge desconegut:", tipus);
-  }
-}
-
-//******************************************************************************************************************* */ Funcions auxiliars
-function nomTaulaServit(d) {
-  // [Servit-24-02-10]
-  const year = d.getFullYear().toString().slice(-2);
-  const month = (d.getMonth() + 1).toString().padStart(2, "0"); // El mes, assegurant-se que té dos dígits.
-  const day = d.getDate().toString().padStart(2, "0"); // El dia, assegurant-se que té dos dígits.
-
-  return `Servit-${year}-${month}-${day}`;
-}
-
-function nomTaulaVenut(d) {
-  //[V_Venut_2024-02]
-  const year = d.getFullYear().toString();
-  const month = (d.getMonth() + 1).toString().padStart(2, "0");
-  return `V_Venut_${year}-${month}`;
-}
-function nomTaulaEncarregs(d) {
-  //[v_encarre_2024-02]
-  const year = d.getFullYear().toString();
-  const month = (d.getMonth() + 1).toString().padStart(2, "0");
-  return `V_Encarre_${year}-${month}`;
-}
-
-function nomTaulaCompromiso(d) {
-  //[v_encarre_2024-02]
-  const year = d.getFullYear().toString();
-  const month = (d.getMonth() + 1).toString().padStart(2, "0");
-  return `Compromiso_${year}_${month}`;
-}
-
-
-function logamqtt(sqlSt) {
-  if (!MqttLog) return;
+/******************************* FUNCIONS PRINCIPALS *************************/
+async function tractaMissatge(data) {
+  dbg('▶️  Entra a tractaMissatge amb', data);
+  const tipus = data.tipus || 'Venta';
   try {
-    // Mostra el SQL original al terminal
-    console.log("📜 SQL Statement original:");
-    console.log(sqlSt);
+    const now = new Date();
+    switch (tipus) {
+      case 'ObreCaixa':
+        dbg('⚙️  Tipus ObreCaixa');
+        process.stdout.write('🏷️ ');
+        ObreCaixa(data);
+        break;
 
-    // Assegurar que el missatge sigui un string
-    let sqlMessage = typeof sqlSt === "string" ? sqlSt : JSON.stringify(sqlSt);
+      case 'Venta':
+        dbg('🛒 Tipus Venta');
+        process.stdout.write('🛒 ');
+        revisaIndicadors(data);
+        break;
 
-    // Màxim de caràcters per missatge
-    const maxLength = 1024;
+      case 'Encarrec':
+        dbg('⏰ Tipus Encarrec');
+        process.stdout.write('⏰ ');
+        await initVectorLlicencia(data.Llicencia, data.Empresa, now);
+        revisaIndicadors(data);
+        break;
 
-    if (sqlMessage.length > maxLength) {
-      console.warn(`⚠️ El missatge SQL és massa llarg (${sqlMessage.length} caràcters). Es dividirà en parts.`);
-
-      // Divideix el missatge en parts
-      const parts = [];
-      for (let i = 0; i < sqlMessage.length; i += maxLength) {
-        parts.push(sqlMessage.slice(i, i + maxLength));
-      }
-
-      // Envia cada part amb un índex
-      parts.forEach((part, index) => {
-        const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql/part${index + 1}`;
-        if (client.connected) {
-          client.publish(topic, part, (err) => {
-            if (err) {
-              console.error(`❌ Error enviant la part ${index + 1} del SQL per MQTT:`, err);
-            } else {
-              console.log(`📤 SQL part ${index + 1} enviat al topic: ${topic}`);
-            }
-          });
-        } else {
-          console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
-        }
-      });
-    } else {
-      // Si no és massa llarg, envia el missatge complet
-      const topic = `${process.env.MQTT_CLIENT_ID}/logs/sql`;
-      if (client.connected) {
-        client.publish(topic, sqlMessage, (err) => {
-          if (err) {
-            console.error("❌ Error enviant el SQL per MQTT:", err);
-          } else {
-            console.log("📤 SQL enviat al topic:", topic);
-          }
-        });
-      } else {
-        console.error("⚠️ No s'ha pogut enviar el SQL per MQTT perquè el client no està connectat.");
-      }
+      default:
+        log('❗ Tipus de missatge desconegut:', tipus);
     }
   } catch (error) {
-    console.error("❌ Error en logamqtt:", error);
+    log('❌ Error a tractaMissatge:', error);
+    throw error;
   }
+  dbg('⏹️ Fi tractaMissatge', tipus);
+}
+
+
+/******************************* AUXILIARS DATES *****************************/
+
+function formatData(d, format = 'YY-MM-DD') {
+  const yearFull = d.getFullYear().toString();
+  const yearShort = yearFull.slice(-2);
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+
+  switch (format) {
+    case 'YY-MM-DD':
+      return `${yearShort}-${month}-${day}`;
+    case 'YYYY-MM':
+      return `${yearFull}-${month}`;
+    case 'YYYY_MM':
+      return `${yearFull}_${month}`;
+    default:
+      throw new Error(`Format de data desconegut: ${format}`);
+  }
+}
+
+function nomTaulaServit(data) {
+  // Format: Servit-24-02-10
+  return `Servit-${formatData(data, 'YY-MM-DD')}`;
+}
+
+function nomTaulaVenut(data) {
+  // Format: V_Venut_2024-02
+  return `V_Venut_${formatData(data, 'YYYY-MM')}`;
+}
+
+function nomTaulaEncarregs(data) {
+  // Format: V_Encarre_2024-02
+  return `V_Encarre_${formatData(data, 'YYYY-MM')}`;
+}
+
+function nomTaulaCompromiso(data) {
+  // Format: Compromiso_2024_02
+  return `Compromiso_${formatData(data, 'YYYY_MM')}`;
 }
 
 
 async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
+  dbg('🔄 initVectorLlicencia', { Llicencia, Empresa, dataInici });
   const avui = new Date();
-  const dataIniciDefecte = new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0); // Si dataInici no està definida, utilitza "avui a les 00:00"
-  const dataIniciUsada = dataInici ? new Date(dataInici) : dataIniciDefecte;
+  const dataIniciUsada = dataInici ? new Date(dataInici) : new Date(avui.getFullYear(), avui.getMonth(), avui.getDate(), 0, 0, 0);
   try {
-    if (
-      dataInici == null &&
-      estocPerLlicencia[Llicencia] &&
-      estocPerLlicencia[Llicencia]["LastUpdate"] &&
-      new Date(estocPerLlicencia[Llicencia]["LastUpdate"]).toDateString() === avui.toDateString()) return;
-    console.log('🔄')
-    // si sql no esta conectat la conectem i esperem a que estigui conectat
-    if (!sql.connected) await sql.connect(dbConfig);
-    let sqlSt = "";
-    let LlicenciaA = Llicencia;
-    //      if (process.env.NODE_ENV === "Dsv") LlicenciaA = 819; // T91 per proves
-    const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
-    const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes()); // Calcula el minut actual (0-47)
-    estocPerLlicencia[Llicencia] = {};
-    estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
-    estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString(); // Estableix o actualitza la data d'última actualització
+    // Evita recálculo si ya se actualizó hoy
+    if (!dataInici && estocPerLlicencia[Llicencia]?.LastUpdate && new Date(estocPerLlicencia[Llicencia].LastUpdate).toDateString() === avui.toDateString()) {
+      dbg('⏩ Vector llicència ja actualitzat avui');
+      return;
+    }
+    // Si sql no esta conectat la conectem i esperem a que estigui conectat
+    if (!sql.connected) {
+      dbg('🖇️  Connectant a MSSQL…');
+      await sql.connect(dbConfig);
+      dbg('✅ Connexió MSSQL establerta');
+    }
 
-    if (Empresa.toLowerCase() === "fac_demo" || Empresa.toLowerCase() === "fac_camps") { // Definim el bucle des d'ahir fins a 31 dies després d'avui
-      const dataInici = moment().subtract(1, "days"); // Ahir
-      const dataFi = moment().add(31, "days"); // 31 dies a partir d'avui
+    const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
+    const minutCalcul = avui.getHours() * 60 + Math.floor(avui.getMinutes());
+
+    estocPerLlicencia[Llicencia] = estocPerLlicencia[Llicencia] || {};
+    estocPerLlicencia[Llicencia]["LastUpdate"] = new Date().toISOString();
+
+    let sqlSt = '';
+
+    // --- GESTIÓ ENCÀRRECS ---
+    if (["fac_demo", "fac_camps"].includes(Empresa.toLowerCase())) {
+      const dataInici = moment().subtract(1, 'days');
+      const dataFi = moment().add(31, 'days');
       let crea = '';
-      for (
-        let d = moment(dataInici);
-        d.isSameOrBefore(dataFi, "day");
-        d.add(1, "day")
-      ) {
-        crea += ` IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaServit(d.toDate())}')
-                      BEGIN
-                      CREATE TABLE [dbo].[${nomTaulaServit(d.toDate())}] (
+
+      for (let d = moment(dataInici); d.isSameOrBefore(dataFi, 'day'); d.add(1, 'day')) {
+        crea += `IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaServit(d.toDate())}')
+                BEGIN
+                  CREATE TABLE [dbo].[${nomTaulaServit(d.toDate())}] (
                         [Id] [uniqueidentifier] NULL,
                         [TimeStamp] [datetime] NULL,
                         [QuiStamp] [nvarchar](255) NULL,
@@ -302,508 +256,408 @@ async function initVectorLlicencia(Llicencia, Empresa, dataInici = null) {
                         [CitaServida] [nvarchar](255) NULL,
                         [CitaTornada] [nvarchar](255) NULL
                       )
-                    END 
-                    `
+                END;
+                `;
 
-        sqlSt += ` union select codiArticle as Article, sum(Quantitatservida) as s, 0 as v, 0 as e 
-                    from [${nomTaulaServit(d.toDate())}] 
-                    where client = ${Llicencia} and quantitatservida > 0 
-                    group by codiArticle `;
+        sqlSt += `UNION SELECT codiArticle as Article, SUM(QuantitatServida) as s, 0 as v, 0 as e
+                FROM [${nomTaulaServit(d.toDate())}]
+                WHERE client = ${Llicencia} AND quantitatServida > 0 AND TipusComanda = 1
+                GROUP BY codiArticle
+                `;
       }
-      sqlSt = `use ${Empresa} 
-                  ${crea}
-                  select Article as codiArticle,isnull(sum(s),0) as UnitatsServides,isnull(Sum(v),0) as UnitatsVenudes, isnull(Sum(e),0) As unitatsEncarregades  from ( 
-                      select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(avui)}]  where botiga = ${Llicencia} group by plu
-                      union 
-                      select plu as Article ,0 as s ,sum(quantitat) as v , 0 as  e  from  [${nomTaulaVenut(mesPasat)}]  where botiga = ${Llicencia} group by plu
-                      union 
-                      select Article as Article ,0 as s , 0 aS V , Sum(quantitat) AS e  from  [${nomTaulaEncarregs(avui)}] where botiga = ${Llicencia} and estat = 0 Group by article 
-                      ` + sqlSt
-      sqlSt += ` ) t group by Article having isnull(Sum(e),0) > 0 `;
-      // console.log(sqlSt);
-      logamqtt(sqlSt)
+
+      sqlSt = `USE ${Empresa} ${crea}
+              SELECT Article as codiArticle, ISNULL(SUM(s), 0) as UnitatsServides,
+                     ISNULL(SUM(v), 0) as UnitatsVenudes, ISNULL(SUM(e), 0) as UnitatsEncarregades
+              FROM (
+                SELECT plu AS Article, 0 as s, SUM(quantitat) as v, 0 as e FROM [${nomTaulaVenut(avui)}] WHERE botiga = ${Llicencia} GROUP BY plu
+                UNION
+                SELECT plu AS Article, 0 as s, SUM(quantitat) as v, 0 as e FROM [${nomTaulaVenut(mesPasat)}] WHERE botiga = ${Llicencia} GROUP BY plu
+                UNION
+                SELECT Article, 0 as s, 0 as v, SUM(quantitat) as e FROM [${nomTaulaEncarregs(avui)}] WHERE botiga = ${Llicencia} AND estat = 0 GROUP BY article
+                ${sqlSt}
+              ) t
+              GROUP BY Article
+              `;
+
       let result = await sql.query(sqlSt);
-      result.recordset.forEach(row => {
-        if (row.unitatsEncarregades > 0)
+      dbg('Resultat SQL', result.recordset.length, 'articles trobats');
+
+      for (const row of result.recordset) {
+        if (row.UnitatsServides > 0 || row.UnitatsEncarregades > 0) {
           estocPerLlicencia[Llicencia][row.codiArticle] = {
             actiu: true,
-            articleCodi: row.codiArticle,
-            ultimMissatge: "",
-            estoc: (row.UnitatsServides - row.UnitatsVenudes - row.unitatsEncarregades),
             tipus: 'Encarrecs',
-            unitatsVenudes: parseFloat(row.UnitatsVenudes),
-            unitatsServides: parseFloat(row.UnitatsServides),
-            unitatsEncarregades: parseFloat(row.unitatsEncarregades),
-            ultimaActualitzacio: new Date().toISOString()
+            articleCodi: Number(row.codiArticle),
+            ultimMissatge: '',
+            estoc: Number(row.UnitatsServides) - Number(row.UnitatsVenudes) - Number(row.UnitatsEncarregades),
+            unitatsVenudes: Number(row.UnitatsVenudes),
+            unitatsServides: Number(row.UnitatsServides),
+            unitatsEncarregades: Number(row.UnitatsEncarregades),
+            ultimaActualitzacio: new Date().toISOString(),
           };
-      });
-    }
-    const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD'); // Mateix dia de la setmana, setmana passada
-    let lastWeekSameDayDia = moment().subtract(7, 'days').date();
-    let historicArrayNew = [];
-    let objectiuNew = 0;
-    let unitatsVenudesNew = 0;
-    let unitatsVenudes7dNew = 0;
-
-    sqlSt = `use ${Empresa} 
-        IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
-        BEGIN   
-          SELECT 
-          plu as codiArticle,
-          objectiu as Objectiu,
-          Min*30 as Minut,
-          SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
-          SUM(CASE WHEN T = 'Past' THEN quantitat ELSE 0 END) AS SumaPast
-          FROM 
-          (
-          -- Subconsulta per les dades "Avui"
-          SELECT 
-              'Avui' AS T,
-              v.plu,
-              objectiu,
-              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-              SUM(v.quantitat) AS quantitat
-          FROM 
-              (SELECT comentaris AS plu, objectiu 
-              FROM [${nomTaulaCompromiso(avui)}] 
-              WHERE dia = '${moment(avui).format(
-      "YYYY-MM-DD"
-    )}' AND botiga =  ${Llicencia}) o
-          JOIN 
-          [${nomTaulaVenut(
-      avui
-    )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
-          GROUP BY 
-              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-              objectiu,
-              v.plu
-            UNION ALL
-            -- Subconsulta per les dades "Passat"
-          SELECT 
-              'Past' AS T,
-              v.plu,
-              objectiu,
-              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-              SUM(v.quantitat) AS quantitat
-          FROM 
-              (SELECT comentaris AS plu, objectiu 
-              FROM [${nomTaulaCompromiso(avui)}] 
-              WHERE dia = '${moment(avui).format(
-      "YYYY-MM-DD"
-    )}' AND botiga =  ${Llicencia}) o
-          JOIN 
-          [${nomTaulaVenut(
-      new Date(lastWeekSameDay)
-    )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
-          GROUP BY 
-              (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-              objectiu,
-              v.plu
-          ) a 
-          GROUP BY 
-          plu,
-          objectiu,
-          Min 
-          ORDER BY 
-          plu,
-          objectiu,
-          Min 
-        END `;
-    //console.log(sqlSt);   
-    logamqtt(sqlSt)
-    let result2 = await sql.query(sqlSt);
-    if (result2.recordset && result2.recordset.length > 0)
-      result2.recordset.forEach(async row => {
-        historicArrayNew = [];
-        unitatsVenudesNew = parseFloat(row.SumaAvui);
-        unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
-        objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
-        sqlSt = `use ${Empresa} 
-      IF EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaCompromiso(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(avui)}') And EXISTS (SELECT * FROM sys.tables WHERE name = '${nomTaulaVenut(new Date(lastWeekSameDay))}')     
-      BEGIN   
-         SELECT 
-         plu as articleCodi,
-         objectiu as Objectiu,
-         Min*30 as Minut,
-         SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
-         SUM(CASE WHEN T = 'Past' THEN quantitat ELSE 0 END) AS SumaPast
-         FROM 
-         (
-         -- Subconsulta per les dades "Avui"
-         SELECT 
-             'Avui' AS T,
-             v.plu,
-             objectiu,
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-             SUM(v.quantitat) AS quantitat
-         FROM 
-             (SELECT comentaris AS plu, objectiu 
-             FROM [${nomTaulaCompromiso(avui)}] 
-             WHERE dia = '${moment(avui).format(
-          "YYYY-MM-DD"
-        )}' AND botiga =  ${Llicencia}) o
-         JOIN 
-         [${nomTaulaVenut(
-          avui
-        )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
-         GROUP BY 
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-             objectiu,
-             v.plu
-          UNION ALL
-          -- Subconsulta per les dades "Passat"
-         SELECT 
-             'Past' AS T,
-             v.plu,
-             objectiu,
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-             SUM(v.quantitat) AS quantitat
-         FROM 
-             (SELECT comentaris AS plu, objectiu 
-             FROM [${nomTaulaCompromiso(avui)}] 
-             WHERE dia = '${moment(avui).format(
-          "YYYY-MM-DD"
-        )}' AND botiga =  ${Llicencia}) o
-         JOIN 
-         [${nomTaulaVenut(
-          new Date(lastWeekSameDay)
-        )}] v ON v.plu = o.plu AND v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia} 
-         GROUP BY 
-             (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30),
-             objectiu,
-             v.plu
-         ) a 
-         GROUP BY 
-         plu,
-         objectiu,
-         Min 
-         ORDER BY 
-         plu,
-         objectiu,
-        Min 
-      END `;
-        //console.log(sqlSt);          
-        logamqtt(sqlSt)
-        result2 = await sql.query(sqlSt);
-        result2.recordset.forEach(row => {
-          historicArrayNew = [];
-          unitatsVenudesNew = parseFloat(row.SumaAvui);
-          unitatsVenudes7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
-          objectiuNew = unitatsVenudes7dNew * (1 + parseFloat(row.Objectiu) / 100);
-
-          if (estocPerLlicencia[Llicencia][row.codiArticle]) {
-            if (estocPerLlicencia[Llicencia][row.codiArticle].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.codiArticle].historic;
-            if (estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes + unitatsVenudesNew;
-            if (estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.codiArticle].unitatsVenudes7d + unitatsVenudes7dNew;
-            if (estocPerLlicencia[Llicencia][row.codiArticle].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.codiArticle].objectiu + objectiuNew;
-          }
-          if (estocPerLlicencia[Llicencia][row.articleCodi]) {
-            if (estocPerLlicencia[Llicencia][row.articleCodi].historic) historicArrayNew = estocPerLlicencia[Llicencia][row.articleCodi].historic;
-            if (estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes) unitatsVenudesNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes + unitatsVenudesNew;
-            if (estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d) unitatsVenudes7dNew = estocPerLlicencia[Llicencia][row.articleCodi].unitatsVenudes7d + unitatsVenudes7dNew;
-            if (estocPerLlicencia[Llicencia][row.articleCodi].objectiu) objectiuNew = estocPerLlicencia[Llicencia][row.articleCodi].objectiu + objectiuNew;
-          }
-
-          estocPerLlicencia[Llicencia][row.codiArticle] = {
-            actiu: true,
-            tipus: "Compromisos",
-            articleCodi: row.codiArticle,
-            ultimMissatge: "",
-            historic: historicArrayNew.concat({
-              Minut: row.Minut,
-              SumaAvui: row.SumaAvui,
-              SumaPast: row.SumaPast,
-            }),
-            unitatsVenudes: parseFloat(unitatsVenudesNew),
-            unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
-            objectiu: objectiuNew,
-            minutCalcul: minutCalcul,
-          };
-        });
-        estocPerLlicencia[Llicencia][row.articleCodi] = {
-          actiu: true,
-          tipus: "Compromisos",
-          articleCodi: row.articleCodi,
-          ultimMissatge: "",
-          historic: historicArrayNew.concat({
-            Minut: row.Minut,
-            SumaAvui: row.SumaAvui,
-            SumaPast: row.SumaPast,
-          }),
-          unitatsVenudes: parseFloat(unitatsVenudesNew),
-          unitatsVenudes7d: parseFloat(unitatsVenudes7dNew),
-          objectiu: objectiuNew,
-          minutCalcul: minutCalcul,
-        };
-      });
-
-    sqlSt = `use ${Empresa} 
-          IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
-          BEGIN
-            CREATE TABLE IndicadorsBotiga (
-            ID uniqueidentifier DEFAULT newid() PRIMARY KEY,
-            TmSt datetime DEFAULT getdate(),
-            Botiga nvarchar(255),
-            Tipus nvarchar(255),
-            Actiu nvarchar(255),
-            Param1 nvarchar(255),
-            Param2 nvarchar(255),
-            Param3 nvarchar(255),
-            Param4 nvarchar(255),
-            Param5 nvarchar(255)
-          )
-          END `
-    let tipus = 'IndicadorVenut';
-    sqlSt = `use ${Empresa} 
-          IF EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')      
-          BEGIN   
-          if (Select count(*) from IndicadorsBotiga Where Botiga = ${Llicencia} and Actiu = '1' and Tipus = '${tipus}') > 0
-          begin
-          select 
-                Min*30 as Minut,
-                SUM(CASE WHEN T = 'Avui' THEN import ELSE 0 END) AS SumaAvui,
-                SUM(CASE WHEN T = 'Past' THEN import ELSE 0 END) AS SumaPast
-                FROM 
-                (
-                -- Subconsulta per les dades "Avui"
-                SELECT 
-                    'Avui' AS T,
-                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-                    SUM(v.import) AS import
-                FROM 
-                [${nomTaulaVenut(
-      avui
-    )}] v where v.Botiga =  ${LlicenciaA} AND DAY(v.data) = ${moment().date()}
-                GROUP BY 
-                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
-                  UNION ALL
-                  -- Subconsulta per les dades "Passat"
-                SELECT 
-                    'Past' AS T,
-                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30) AS Min,
-                    SUM(v.import) AS import
-                FROM 
-                [${nomTaulaVenut(
-      new Date(lastWeekSameDay)
-    )}] v where v.Botiga =  ${LlicenciaA}  AND DAY(v.data) = ${lastWeekSameDayDia}
-                GROUP BY 
-                    (DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30)
-                ) a 
-                GROUP BY 
-                Min 
-                ORDER BY 
-                Min
-            end    
-          END`;
-    //console.log(sqlSt);          
-    logamqtt(sqlSt)
-    result2 = await sql.query(sqlSt);
-    if (result2 && result2.recordset) {
-      result2.recordset.forEach((row) => {
-        historicArrayNew = [];
-        let importVenutNew = parseFloat(row.SumaAvui);
-        let importVenut7dNew = row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0;
-
-        if (estocPerLlicencia[Llicencia][tipus]) {
-          historicArrayNew = estocPerLlicencia[Llicencia][tipus].historic;
-          importVenutNew = estocPerLlicencia[Llicencia][tipus].importVenut + parseFloat(importVenutNew);
-          importVenut7dNew = estocPerLlicencia[Llicencia][tipus].importVenut7d + parseFloat(importVenut7dNew);
         }
+      }
+    }
 
-        estocPerLlicencia[Llicencia][tipus] = {
-          actiu: true,
-          tipus: tipus,
-          articleCodi: tipus,
-          ultimMissatge: "",
-          historic: historicArrayNew.concat({
-            Minut: row.Minut,
-            SumaAvui: row.SumaAvui,
-            SumaPast: row.SumaPast,
-          }),
-          importVenut: parseFloat(importVenutNew),
-          importVenut7d: parseFloat(importVenut7dNew),
-          minutCalcul: minutCalcul,
-        };
-      });
+    // --- GESTIÓ COMPROMISOS (Històric i Objectius) ---
+    await actualitzaCompromisos(Llicencia, Empresa, avui, minutCalcul);
+  } catch (error) {
+    log('❌ Error a initVectorLlicencia:', error);
+    throw error; // Llença l'error per a que es pugui gestionar més amunt
+  }
+}
+
+/******************************* COMPROMISOS *********************************/
+async function actualitzaCompromisos(Llicencia, Empresa, avui, minutCalcul) {
+  const lastWeekSameDay = moment().subtract(7, 'days').format('YYYY-MM-DD');
+  const lastWeekSameDayDia = moment().subtract(7, 'days').date();
+
+  const taulaCompromisos = nomTaulaCompromiso(avui);
+  const taulaVenutAvui = nomTaulaVenut(avui);
+  const taulaVenutSetmanaPassada = nomTaulaVenut(new Date(lastWeekSameDay));
+
+  async function taulesExisteixen() {
+    const query = `
+      USE ${Empresa};
+      IF EXISTS (SELECT * FROM sys.tables WHERE name = '${taulaCompromisos}')
+      AND EXISTS (SELECT * FROM sys.tables WHERE name = '${taulaVenutAvui}')
+      AND EXISTS (SELECT * FROM sys.tables WHERE name = '${taulaVenutSetmanaPassada}')
+      SELECT 1 AS Existeix;
+    `;
+    const result = await sql.query(query);
+
+    if (result && result.recordset) {
+      dbg('[Compromisos] Taules Existeixen', result);
+      return result.recordset.length > 0;
+    } else {
+      dbg('[Compromisos] No existeix ' + taulaCompromisos + ' o ' + taulaVenutAvui + ' o ' + taulaVenutSetmanaPassada);
+      return false;
+    }
+  }
+
+  function buildQueryObjectius() {
+    return `
+      USE ${Empresa};
+      SELECT 
+        plu AS codiArticle,
+        objectiu AS Objectiu,
+        Min * 30 AS Minut,
+        SUM(CASE WHEN T = 'Avui' THEN quantitat ELSE 0 END) AS SumaAvui,
+        SUM(CASE WHEN T = 'Past' THEN quantitat ELSE 0 END) AS SumaPast
+      FROM (
+        SELECT 'Avui' AS T, v.plu, objectiu,
+          DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30 AS Min,
+          SUM(v.quantitat) AS quantitat
+        FROM (
+          SELECT comentaris AS plu, objectiu
+          FROM [${taulaCompromisos}]
+          WHERE dia = '${moment(avui).format('YYYY-MM-DD')}' AND botiga = ${Llicencia}
+        ) o
+        JOIN [${taulaVenutAvui}] v ON v.plu = o.plu AND v.Botiga = ${Llicencia} AND DAY(v.data) = ${moment().date()}
+        GROUP BY DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30, objectiu, v.plu
+
+        UNION ALL
+
+        SELECT 'Past' AS T, v.plu, objectiu,
+          DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30 AS Min,
+          SUM(v.quantitat) AS quantitat
+        FROM (
+          SELECT comentaris AS plu, objectiu
+          FROM [${taulaCompromisos}]
+          WHERE dia = '${moment(avui).format('YYYY-MM-DD')}' AND botiga = ${Llicencia}
+        ) o
+        JOIN [${taulaVenutSetmanaPassada}] v ON v.plu = o.plu AND v.Botiga = ${Llicencia} AND DAY(v.data) = ${lastWeekSameDayDia}
+        GROUP BY DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30, objectiu, v.plu
+      ) a
+      GROUP BY plu, objectiu, Min
+      ORDER BY plu, objectiu, Min;
+    `;
+  }
+
+  async function actualitzaEstoc(row, tipus) {
+    const articleKey = row.codiArticle || row.articleCodi;
+    const anterior = estocPerLlicencia[Llicencia][articleKey] || {};
+    const historicAnterior = anterior.historic || [];
+
+    const historicNou = historicAnterior.concat({
+      Minut: row.Minut,
+      SumaAvui: row.SumaAvui,
+      SumaPast: row.SumaPast
+    });
+
+    const nou = {
+      actiu: true,
+      tipus,
+      articleCodi: articleKey,
+      ultimMissatge: '',
+      historic: historicNou,
+      minutCalcul,
+    };
+
+    if (tipus === 'IndicadorVenut') {
+      nou.importVenut = (anterior.importVenut || 0) + parseFloat(row.SumaAvui);
+      nou.importVenut7d = (anterior.importVenut7d || 0) + (row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0);
+    } else {
+      nou.unitatsVenudes = (anterior.unitatsVenudes || 0) + parseFloat(row.SumaAvui);
+      nou.unitatsVenudes7d = (anterior.unitatsVenudes7d || 0) + (row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0);
+      nou.objectiu = (anterior.objectiu || 0) + ((row.Minut < minutCalcul ? parseFloat(row.SumaPast) : 0) * (1 + parseFloat(row.Objectiu) / 100));
+    }
+
+    estocPerLlicencia[Llicencia][articleKey] = nou;
+  }
+
+  if (await taulesExisteixen()) {
+    const query = buildQueryObjectius();
+    const result = await sql.query(query);
+
+    for (const row of result.recordset) {
+      await actualitzaEstoc(row, 'Compromisos');
+    }
+    dbg('[Compromisos] Processats', result.recordset.length);
+  }
+
+  // Creació taula IndicadorsBotiga si no existeix
+  const crearIndicadorsTaula = `
+    USE ${Empresa};
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
+    BEGIN
+      CREATE TABLE IndicadorsBotiga (
+        ID uniqueidentifier DEFAULT newid() PRIMARY KEY,
+        TmSt datetime DEFAULT getdate(),
+        Botiga nvarchar(255),
+        Tipus nvarchar(255),
+        Actiu nvarchar(255),
+        Param1 nvarchar(255),
+        Param2 nvarchar(255),
+        Param3 nvarchar(255),
+        Param4 nvarchar(255),
+        Param5 nvarchar(255)
+      )
+    END
+  `;
+  await sql.query(crearIndicadorsTaula);
+
+  const tipus = 'IndicadorVenut';
+  const queryIndicadors = `
+    USE ${Empresa};
+    IF EXISTS (SELECT * FROM sys.tables WHERE name = 'IndicadorsBotiga')
+    BEGIN
+      IF (SELECT COUNT(*) FROM IndicadorsBotiga WHERE Botiga = ${Llicencia} AND Actiu = '1' AND Tipus = '${tipus}') > 0
+      BEGIN
+        SELECT
+          Min * 30 AS Minut,
+          SUM(CASE WHEN T = 'Avui' THEN import ELSE 0 END) AS SumaAvui,
+          SUM(CASE WHEN T = 'Past' THEN import ELSE 0 END) AS SumaPast
+        FROM (
+          SELECT 'Avui' AS T,
+            DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30 AS Min,
+            SUM(v.import) AS import
+          FROM [${taulaVenutAvui}] v
+          WHERE v.Botiga = ${Llicencia} AND DAY(v.data) = ${moment().date()}
+          GROUP BY DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30
+
+          UNION ALL
+
+          SELECT 'Past' AS T,
+            DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30 AS Min,
+            SUM(v.import) AS import
+          FROM [${taulaVenutSetmanaPassada}] v
+          WHERE v.Botiga = ${Llicencia} AND DAY(v.data) = ${lastWeekSameDayDia}
+          GROUP BY DATEDIFF(MINUTE, CAST(v.data AS DATE), v.data) / 30
+        ) a
+        GROUP BY Min
+        ORDER BY Min;
+      END
+    END
+  `;
+  const resultIndicadors = await sql.query(queryIndicadors);
+
+  if (resultIndicadors && Array.isArray(resultIndicadors.recordset)) {
+    for (const row of resultIndicadors.recordset) {
+      await actualitzaEstoc(row, tipus);
+    }
+  }
+}
+
+/******************************* RECEPCIÓ MISSATGES **************************/
+async function ObreCaixa(data) {
+  dbg('🔓 ObreCaixa', data);
+  try {
+    await initVectorLlicencia(data.Llicencia, data.Empresa, data.CaixaDataInici);
+  } catch (error) {
+    log('❌ Error a ObreCaixa:', error);
+    throw error;
+  }
+}
+
+async function revisaIndicadors(data) {
+  dbg('🧮 revisaIndicadors', data);
+  if (!data || !Array.isArray(data.Articles)) {
+    log('❌ Dades incorrectes o sense articles:', data);
+    return;
+  }
+
+  try {
+    await initVectorLlicencia(data.Llicencia, data.Empresa);
+    const minutCalcul = new Date().getHours() * 60 + Math.floor(new Date().getMinutes());
+    const tipus = data.tipus || 'Venta';
+    let importTotalTicket = 0;
+
+    data.Articles.forEach(article => {
+      const articleCodi = Number(article.articleCodi || article.CodiArticle || 0);
+      const quantitat = parseFloat(article.Quantitat || 0);
+      const importArticle = parseFloat(article.import || 0);
+      const control = estocPerLlicencia[data.Llicencia]?.[articleCodi];
+      dbg('Article', articleCodi, 'Quantitat', quantitat, 'Import', importArticle, 'Control', control);
+
+      if (!control) return;
+
+      if (tipus === 'Venta') {
+        importTotalTicket += importArticle;
+        control.unitatsVenudes = parseFloat((control.unitatsVenudes + quantitat).toFixed(3));
+      }
+    });
+
+    for (const control of Object.values(estocPerLlicencia[data.Llicencia])) {
+      if (!control || typeof control !== 'object' || !control.tipus) continue;
+      const missatge = generaMissatge(control, minutCalcul, importTotalTicket, data.Llicencia);
+
+      dbg('MSG', control.articleCodi, missatge);
+
+      if (control.ultimMissatge !== missatge) {
+        control.ultimMissatge = missatge;
+        const topic = `${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`;
+        dbg('MQTT →', topic, missatge);
+        client.publish(topic, missatge);
+        process.stdout.write('📨');
+      }
     }
   } catch (error) {
-    console.error(error);
-    // Gestiona l'error o llança'l de nou si és necessari.
-    throw error; // Llançar l'error farà que la promesa sigui rebutjada.
+    log('❌ Error a revisaIndicadors:', error);
   }
+  dbg('⏹️ Fi revisaIndicadors');
 }
-// Quan es rep un missatge MQTT
-async function ObreCaixa(data) {
-  await initVectorLlicencia(data.Llicencia, data.Empresa, data.CaixaDataInici);
+/******************************* GENERACIÓ MISSATGES *************************/
+function generaMissatge(control, minutCalcul, importTotalTicket, llicencia) {
+  dbg('🔄 generaMissatge', control, minutCalcul, importTotalTicket, llicencia);
+  const tipusControl = control.tipus;
+
+  if (tipusControl === 'Encarrecs') {
+    dbg('🔄 generaMissatge Encarrecs', control, minutCalcul, importTotalTicket, llicencia);
+    return generaMissatgeEncarrecs(control, llicencia);
+  } else if (tipusControl === 'Compromisos') {
+    dbg('🔄 generaMissatge Compromisos', control, minutCalcul, importTotalTicket, llicencia);
+    return generaMissatgeCompromisos(control, minutCalcul, llicencia);
+  } else if (tipusControl === 'IndicadorVenut') {
+    dbg('🔄 generaMissatge IndicadorVenut', control, minutCalcul, importTotalTicket, llicencia);
+    return generaMissatgeIndicadorVenut(control, minutCalcul, importTotalTicket, llicencia);
+  }
+
+  return control.ultimMissatge;
 }
-/********************************************** */
-// Quan es rep un missatge MQTT
-async function revisaIndicadors(data) {
-  // Comprovar si 'data' té la propietat 'Articles' i que és una array
-  let missatge = ""
-  let ImportTotalTicket = 0;
-  if (data && data.Articles && Array.isArray(data.Articles)) {
-    try {
-      await initVectorLlicencia(data.Llicencia, data.Empresa);
-      const minutCalcul = new Date().getHours() * 60 + Math.floor(new Date().getMinutes()); // Calcula el minut actual (0-47)
-      let tipus = "Venta";
-      if (data.tipus) tipus = data.tipus;
-      data.Articles.forEach((article) => {  // actualitzem les dades a l estructura d articles controlats
-        let articleCodi = 0
-        if (article.articleCodi) articleCodi = article.articleCodi
-        if (article.CodiArticle) articleCodi = article.CodiArticle
-        switch (tipus) {
-          case "Venta":
-            ImportTotalTicket += parseFloat(article.import);
-            if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsVenudes)).toFixed(3))
-            break;
-          case "Encarreg":
-            if (estocPerLlicencia[data.Llicencia][articleCodi]) estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades = parseFloat((parseFloat(article.Quantitat) + parseFloat(estocPerLlicencia[data.Llicencia][articleCodi].unitatsEncarregades)).toFixed(3))
-            break;
-        }
-      });
 
-      Object.values(estocPerLlicencia[data.Llicencia]).forEach((controlat) => {  // Revisem els indicadors 
-        missatge = controlat.ultimMissatge; // Creem el missatge
-        if (controlat.tipus === "Encarrecs") {    // Si hi ha encarregs 
-          controlat.estoc =
-            parseFloat(controlat.unitatsServides) -
-            parseFloat(controlat.unitatsVenudes) -
-            parseFloat(controlat.unitatsEncarregades);
-          controlat.ultimaActualitzacio = new Date().toISOString();
-          let texte = controlat.estoc + ' = ' + parseFloat(controlat.unitatsServides) + ' - ' + parseFloat(controlat.unitatsVenudes) + ' - ' + parseFloat(controlat.unitatsEncarregades);
-          let size = 12
-          let color = "Black"
-          if (controlat.estoc < 0) {
-            color = "Red"
-            size = 17
-            texte = '🤢' + texte
-          }
-          if (controlat.estoc == 0) {
-            texte = '🎯' + texte
-            color = "Green"
-          }
-          if (controlat.estoc == 1) texte = '🍒' + texte
-          if (controlat.estoc == 2) texte = '🍒🍒' + texte
-          if (controlat.estoc == 3) texte = '🍒🍒🍒' + texte
-          if (controlat.estoc == 4) texte = '🍒🍒🍒🍒' + texte
-          if (controlat.estoc == 5) texte = '🍒🍒🍒🍒🍒' + texte
+function generaMissatgeEncarrecs(control, llicencia) {
+  control.estoc = control.unitatsServides - control.unitatsVenudes - control.unitatsEncarregades;
+  control.ultimaActualitzacio = new Date().toISOString();
 
-          missatge = JSON.stringify({
-            Llicencia: data.Llicencia,
-            articleCodi: controlat.articleCodi,
-            EstocActualitzat: texte,
-            FontSize: size,
-            FontColor: color,
-          })
-          //console.log(missatge)          
-        } else if (controlat.tipus === "Compromisos") {
-          controlat.historic.forEach((historic) => {
-            if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
-              controlat.unitatsVenudes7d = parseFloat(controlat.unitatsVenudes7d) + parseFloat(historic.SumaPast);
-              controlat.minutCalcul = historic.Minut;
-            }
-          });
+  let emoji = '';
+  if (control.estoc < 0) {
+    emoji = '🤢';
+  } else {
+    const count = Math.min(5, Math.floor(control.estoc)); // 0‥5
+    emoji = '🍒'.repeat(count);
+  }
 
-          missatge = parseFloat(controlat.unitatsVenudes) > parseFloat(controlat.objectiu) ? "😄" : "💩";
-          let dif = Math.floor(controlat.unitatsVenudes - controlat.objectiu);
-          let carasInc = ["", "😃", "🍒", "🤢"];
-          if (dif >= 2) missatge = carasInc[0];
-          else if (dif === 1) missatge = carasInc[1]; // Bé, supera l'objectiu per 1 unitat
-          else if (dif === 0) missatge = carasInc[1];
-          else if (dif === -1) missatge = carasInc[2];
-          else if (dif === -2) missatge = carasInc[2] + carasInc[2];
-          else if (dif === -3) missatge = carasInc[2] + carasInc[2] + carasInc[2];
-          else if (dif === -4) missatge = carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2];
-          else if (dif === -5) missatge = carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2];
-          else if (dif === -6) missatge = carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2] + carasInc[2];
-          else if (dif <= -6) missatge = carasInc[3];
-          else if (dif >= 1) missatge = "";
+  const texte = `${emoji}${control.estoc} = ${control.unitatsServides} - ${control.unitatsVenudes} - ${control.unitatsEncarregades}`;
+  const color = control.estoc < 0 ? 'Red' : control.estoc === 0 ? 'Green' : 'Black';
+  const size = control.estoc < 0 ? 16 : 12;
 
-          missatge = JSON.stringify({
-            Llicencia: data.Llicencia,
-            articleCodi: controlat.articleCodi,
-            EstocActualitzat: missatge,
-            FontSize: 20,
-            FontColor: "Black",
-          })
-        } else if (controlat.tipus === "IndicadorVenut") {
-          controlat.articleCodi = 'IndicadorPos1';
-          if (!ImportTotalTicket) ImportTotalTicket = 0;
-          controlat.importVenut = parseFloat(controlat.importVenut) + parseFloat(ImportTotalTicket);
-          controlat.historic.forEach((historic) => {
-            if (historic.Minut > controlat.minutCalcul && minutCalcul > controlat.minutCalcul) {
-              controlat.importVenut7d = parseFloat(controlat.importVenut7d) + parseFloat(historic.SumaPast);
-              controlat.importVenut = parseFloat(controlat.importVenut) + parseFloat(historic.SumaAvui);
-              controlat.minutCalcul = historic.Minut;
-            }
-          });
+  return JSON.stringify({
+    Llicencia: llicencia,
+    articleCodi: control.articleCodi,
+    EstocActualitzat: texte,
+    FontSize: size,
+    FontColor: color,
+  });
+}
 
-          //          logamqtt('Venut ', controlat.importVenut, 'Venut 7d ', controlat.importVenut7d);
-          let dif = Math.floor(controlat.importVenut / controlat.importVenut7d * 100) - 100;  // Calculem la diferència en percentatge
-          let carasInc = ["🤑", "😃", "😄", "😒", "😥", "😳", "😟", "💩", "😠", "😡", "🤬", "🤢", "🤢"];
-
-          let Import = Math.round(controlat.importVenut) - Math.round(controlat.importVenut7d)
-          let color = "Black"
-          let size = 17
-          if (dif < 0) {
-            color = "Red"
-            size = 20
-          }
-          // si en el estring controlat.ultimMissatge  havia el texto black o green i ara es vermell o gran, enviem el missatge
-          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Green')) && (color === 'Red')) {
-            // Hem pasat de verd o negre a vermell Activem avisos x producte 
-
-          }
-          if ((controlat.ultimMissatge.includes('Black') || controlat.ultimMissatge.includes('Red')) && (color === 'Green')) {
-            // Hem pasat de Red o negre a verd Desactivem Activem avisos x producte 
-
-          }
-
-          missatge = carasInc[5] + ' ' + Import;
-          if (dif > 20) missatge = carasInc[0] + ' ' + Import;
-          else if (dif > 10) missatge = carasInc[1] + ' ' + Import;
-          else if (dif > 0) missatge = carasInc[2] + ' ' + Import;
-          else if (dif > -5) missatge = carasInc[3] + ' ' + Import;
-          else if (dif > -10) missatge = carasInc[4] + ' ' + Import;
-          else if (dif > -15) missatge = carasInc[5] + ' ' + Import;
-          else if (dif > -18) missatge = carasInc[6] + ' ' + Import;
-          else if (dif > -20) missatge = carasInc[7] + ' ' + Import;
-          else if (dif > -22) missatge = carasInc[8] + ' ' + Import;
-          else if (dif > -24) missatge = carasInc[9] + ' ' + Import;
-          else if (dif > -25) missatge = carasInc[10] + ' ' + Import;
-          else if (dif > -30) missatge = carasInc[11] + ' ' + Import;
-          else if (dif > -50) missatge = carasInc[12] + ' ' + Import;
-          missatge = JSON.stringify({
-            Llicencia: data.Llicencia,
-            articleCodi: controlat.articleCodi,
-            EstocActualitzat: missatge,
-            FontSize: size,
-            FontColor: color,
-          })
-        }
-        if (controlat.ultimMissatge !== missatge) {
-          controlat.ultimMissatge = missatge;
-          client.publish(`${process.env.MQTT_CLIENT_ID}/Estock/${data.Llicencia}`, controlat.ultimMissatge);
-          //console.log(controlat.ultimMissatge)
-          process.stdout.write('📨')
-        }
-      });
-    } catch (error) {
-      console.error("Error handling stock: ", error);
+function generaMissatgeCompromisos(control, minutCalcul, llicencia) {
+  control.historic.forEach(historic => {
+    if (historic.Minut > control.minutCalcul && minutCalcul > control.minutCalcul) {
+      control.unitatsVenudes7d += parseFloat(historic.SumaPast);
+      control.minutCalcul = historic.Minut;
     }
+  });
+
+  const dif = Math.floor(control.unitatsVenudes - control.objectiu);
+  let emoji = '💩';
+  if (dif >= 1) emoji = '😃';
+  else if (dif >= -5) emoji = '🍒'.repeat(Math.abs(dif));
+  else if (dif < -5) emoji = '🤢';
+
+  return JSON.stringify({
+    Llicencia: llicencia,
+    articleCodi: control.articleCodi,
+    EstocActualitzat: emoji,
+    FontSize: 20,
+    FontColor: 'Black',
+  });
+}
+
+function generaMissatgeIndicadorVenut(control, minutCalcul, importTotalTicket, llicencia) {
+  control.articleCodi = 'IndicadorPos1';
+  control.importVenut += importTotalTicket;
+
+  control.historic.forEach(historic => {
+    if (historic.Minut > control.minutCalcul && minutCalcul > control.minutCalcul) {
+      control.importVenut7d += parseFloat(historic.SumaPast);
+      control.importVenut += parseFloat(historic.SumaAvui);
+      control.minutCalcul = historic.Minut;
+    }
+  });
+
+  const dif = Math.floor((control.importVenut / control.importVenut7d) * 100) - 100;
+  const importDiff = Math.round(control.importVenut - control.importVenut7d);
+  const emojis = ['🤑', '😃', '😄', '😒', '😥', '😳', '😟', '💩', '😠', '😡', '🤬', '🤢', '🤢'];
+
+  let color = 'Black', size = 17, index = 5;
+  if (dif > 20) index = 0;
+  else if (dif > 10) index = 1;
+  else if (dif > 0) index = 2;
+  else if (dif > -5) index = 3;
+  else if (dif > -10) index = 4;
+  else if (dif > -15) index = 5;
+  else if (dif > -18) index = 6;
+  else if (dif > -20) index = 7;
+  else if (dif > -22) index = 8;
+  else if (dif > -24) index = 9;
+  else if (dif > -25) index = 10;
+  else if (dif > -30) index = 11;
+  else index = 12;
+
+  if (dif < 0) {
+    color = 'Red';
+    size = 20;
   }
-  process.stdout.write('.')
+
+  return JSON.stringify({
+    Llicencia: llicencia,
+    articleCodi: control.articleCodi,
+    EstocActualitzat: `${emojis[index]} ${importDiff}`,
+    FontSize: size,
+    FontColor: color,
+  });
 }
 
 
-// Test code
+/******************************* TEST *************************/
 if (process.argv.includes('--test')) {
-  console.log('🧪 Test')
+  log('🧪 Mode test activat');
   test.describe('revisaIndicadors', () => {
-    //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}') 
-    const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}')
-    let clientMqttTest
+    //  const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}')
+    const data = JSON.parse('{"Llicencia":891,"Empresa":"Fac_Tena","Tipus":"ObreCaixa","Articles":[{"CodiArticle":"189","Quantitat":"1","import":"0.85"}]}');
+    let clientMqttTest;
 
     test.before(async () => {
       await new Promise((resolve, reject) => {
@@ -847,14 +701,14 @@ if (process.argv.includes('--test')) {
 
     test.after((done) => {
       clientMqttTest.end(false, () => {
-        test.publish()
+        test.publish();
         process.exitCode = 0;
         done();
       });
     });
-
   });
-} else {// Mantenir el programa en execució
-  console.log('🚀 Iniciat');
+} else {
+  // Mantenir el programa en execució
+  log('🚀 Programa arrencat');
   process.stdin.resume();
 }
