@@ -10,7 +10,7 @@ const DEBUG = process.env.DEBUG?.toLowerCase() === 'true';
 
 function log(...args) {
   // Unifica logs i afegeix marca temporal
-  const stamp = new Date().toISOString();
+  const stamp = new Date().toLocaleString();
   console.log(stamp, ...args);
 }
 function dbg(...args) {
