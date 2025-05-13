@@ -3,8 +3,9 @@ services:
   contable:
     container_name: contable
     build: .
-    environment:
-      TZ : Europe/Madrid
     restart: unless-stopped
     ports:
-     - 3039:3039
+      - '3039:3039'   
+      - '3111:3111'   
+    env_file:
+      - .env          
