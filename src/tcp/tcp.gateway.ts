@@ -10,26 +10,24 @@ export class TcpGateway implements OnModuleInit {
     const server = createServer();
 
     server.on('connection', (socket: Socket) => {
-      Logger.debug('➕ Client TCP connectat');
+      if (process.env.DEBUG?.toLowerCase() === 'true') {
+        Logger.debug('➕ Client TCP connectat');
+      }
       socket.on('data', async (buf) => {
         try {
           const msg = JSON.parse(buf.toString());
           await this.stock.handleMessage(msg);
-          socket.write(
-            JSON.stringify({ status: 'success', message: 'Missatge OK' }),
-          );
+          socket.write(JSON.stringify({ status: 'success', message: 'Missatge OK' }));
         } catch (err) {
           Logger.error('❌ Error al socket TCP', err);
-          socket.write(
-            JSON.stringify({ status: 'error', message: err.message }),
-          );
+          socket.write(JSON.stringify({ status: 'error', message: err.message }));
         }
       });
-      socket.on('end', () => Logger.debug('➖ Client TCP desconnectat'));
+      if (process.env.DEBUG?.toLowerCase() === 'true') {
+        socket.on('end', () => Logger.debug('➖ Client TCP desconnectat'));
+      }
     });
 
-    server.listen(3039, () =>
-      Logger.log('🚀 Servidor TCP escoltant al port 3039'),
-    );
+    server.listen(3039, () => Logger.log('🚀 Servidor TCP escoltant al port 3039'));
   }
 }
