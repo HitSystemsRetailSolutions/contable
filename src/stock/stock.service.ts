@@ -218,7 +218,7 @@ export class StockService {
                 `;
         unionSql += `UNION SELECT codiArticle as Article, SUM(QuantitatServida) as s, 0 as v, 0 as e
                 FROM [${table}]
-                WHERE client = ${Llicencia} AND quantitatServida > 0 AND TipusComanda = 1
+                WHERE client = ${Llicencia} AND quantitatServida > 0 AND TipusComanda != 2
                 GROUP BY codiArticle
                 `;
       }
