@@ -4,7 +4,7 @@ import { StockService } from '../stock/stock.service';
 
 @Injectable()
 export class TcpGateway implements OnModuleInit {
-  constructor(private readonly stock: StockService) {}
+  constructor(private readonly stock: StockService) { }
 
   onModuleInit() {
     const server = createServer();
@@ -23,9 +23,15 @@ export class TcpGateway implements OnModuleInit {
           socket.write(JSON.stringify({ status: 'error', message: err.message }));
         }
       });
-      if (process.env.DEBUG?.toLowerCase() === 'true') {
-        socket.on('end', () => Logger.debug('➖ Client TCP desconnectat'));
-      }
+      socket.on('end', () => {
+        if (process.env.DEBUG?.toLowerCase() === 'true') {
+          Logger.debug('➖ Client TCP desconnectat');
+        }
+      });
+
+      socket.on('error', (err) => {
+        Logger.error('💥 Error en el socket TCP:', err);
+      });
     });
 
     server.listen(3039, () => Logger.log('🚀 Servidor TCP escoltant al port 3039'));
