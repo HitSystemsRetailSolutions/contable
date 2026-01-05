@@ -40,7 +40,7 @@ export class StockService {
   constructor(
     private readonly db: DatabaseService,
     private readonly mqtt: MqttService,
-  ) {}
+  ) { }
 
   /** Punt d'entrada per MQTT o TCP */
   async handleMessage(data: any) {
@@ -177,9 +177,11 @@ export class StockService {
     }
     this.lastUpdate[Llicencia] = avui.toISOString();
     const inici = dataInici ? new Date(dataInici) : new Date(avui.getFullYear(), avui.getMonth(), avui.getDate());
+    const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
+    const mesSeguent = new Date(avui.getFullYear(), avui.getMonth() + 1, 1);
+
     if (!this.estoc[Llicencia]) this.estoc[Llicencia] = {};
 
-    const mesPasat = new Date(avui.getFullYear(), avui.getMonth() - 1, 1);
     const minutCalcul = avui.getHours() * 60 + avui.getMinutes();
 
     // ENCARRECS
@@ -233,6 +235,8 @@ export class StockService {
                 SELECT Article, 0 as s, 0 as v, SUM(quantitat) as e FROM [${nomTaulaEncarregs(avui)}] WHERE botiga = ${Llicencia} AND estat = 0 GROUP BY article
                 UNION
                 SELECT Article, 0 as s, 0 as v, SUM(quantitat) as e FROM [${nomTaulaEncarregs(mesPasat)}] WHERE botiga = ${Llicencia} AND estat = 0 GROUP BY article
+                UNION
+                SELECT Article, 0 as s, 0 as v, SUM(quantitat) as e FROM [${nomTaulaEncarregs(mesSeguent)}] WHERE botiga = ${Llicencia} AND estat = 0 GROUP BY article
                 ${unionSql}
               ) t
               GROUP BY Article
