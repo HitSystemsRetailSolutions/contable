@@ -25,7 +25,8 @@ export class IndicadorsService {
   async handleMessage(data: any) {
     dbg('IndicadorsService.handleMessage', data);
     const tipus = data.Tipus || data.tipus || 'Venta';
-    if (tipus === 'Venta' && ['fac_tena'].includes(data.empresa.toLowerCase())) {
+    const empresa = data.Empresa || data.empresa || '';
+    if (tipus === 'Venta' && ['fac_tena'].includes(empresa.toLowerCase())) {
       await this.revisaIndicadors(data);
     }
   }
