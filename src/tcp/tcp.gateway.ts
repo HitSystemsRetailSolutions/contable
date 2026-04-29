@@ -1,10 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createServer, Socket } from 'net';
 import { StockService } from '../stock/stock.service';
+import { IndicadorsService } from '../stock/indicadors.service';
 
 @Injectable()
 export class TcpGateway implements OnModuleInit {
-  constructor(private readonly stock: StockService) { }
+  constructor(
+    private readonly stock: StockService,
+    private readonly indicadors: IndicadorsService,
+  ) { }
 
   onModuleInit() {
     const server = createServer();
@@ -17,6 +21,7 @@ export class TcpGateway implements OnModuleInit {
         try {
           const msg = JSON.parse(buf.toString());
           await this.stock.handleMessage(msg);
+          await this.indicadors.handleMessage(msg);
           socket.write(JSON.stringify({ status: 'success', message: 'Missatge OK' }));
         } catch (err) {
           Logger.error('❌ Error al socket TCP', err);
