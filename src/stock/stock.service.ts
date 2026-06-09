@@ -199,6 +199,7 @@ export class StockService {
                 `;
       }
       const query = `USE ${Empresa} ${crea}
+              ${this.sqlCreaTaulesEncarrecs([avui, mesPasat, mesSeguent])}
               SELECT Article as codiArticle, ISNULL(SUM(s), 0) as UnitatsServides,
                      ISNULL(SUM(v), 0) as UnitatsVenudes, ISNULL(SUM(e), 0) as UnitatsEncarregades
               FROM (
@@ -224,6 +225,37 @@ export class StockService {
   }
 
   /** Centralitza l'actualització del map estoc per a tots els tipus */
+  private sqlCreaTaulesEncarrecs(dates: Date[]): string {
+    const tables = [...new Set(dates.map((d) => nomTaulaEncarregs(d)))];
+    return tables.map((table) => this.sqlCreaTaulaEncarrecs(table)).join('\n');
+  }
+
+  private sqlCreaTaulaEncarrecs(table: string): string {
+    return `IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '${table}')
+              BEGIN
+                CREATE TABLE [dbo].[${table}](
+                  [Id] [nvarchar](255) NULL,
+                  [Dependenta] [float] NULL,
+                  [Client] [nvarchar](255) NULL,
+                  [Data] [datetime] NULL,
+                  [Estat] [float] NULL,
+                  [Tipus] [float] NULL,
+                  [Anticip] [float] NULL,
+                  [Botiga] [float] NULL,
+                  [Detall] [nvarchar](255) NULL,
+                  [Periode] [nvarchar](255) NULL,
+                  [Article] [float] NULL,
+                  [Quantitat] [float] NULL,
+                  [Import] [float] NULL,
+                  [Descompte] [nvarchar](255) NULL,
+                  [MarcatDesde] [nvarchar](255) NULL,
+                  [Comentari] [nvarchar](255) NULL,
+                  [Importat] [nvarchar](255) NULL
+                )
+              END;
+              `;
+  }
+
   private actualitzaEstoc(row: any, tipus: ControlData['tipus'], Llicencia: number) {
     const cd = String(row.codiArticle || row.Article);
     const prev = this.estoc[Llicencia][cd] ?? ({ actiu: false, tipus, articleCodi: cd, ultimMissatge: '' } as ControlData);
